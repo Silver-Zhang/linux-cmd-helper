@@ -19,9 +19,9 @@ EOF
 
 上下文选项（默认最小上下文，省 token）：
   -c, --context       发送精简上下文（pwd/git/disk/meta）
-  --last-run          精简上下文 + last-run 日志尾部
-  --last-record       精简上下文 + last-record 日志尾部
-  --full-context      发送完整上下文（调用 cmd-context）
+  --last-run[=N]      精简上下文 + last-run 日志尾部（默认 200 行，可指定行数）
+  --last-record[=N]   精简上下文 + last-record 日志尾部（默认 300 行，可指定行数）
+  --full-context      发送完整上下文（调用 cmd-context，含目录列表、bash 历史等）
 
 模型选项：
   默认：
@@ -88,9 +88,21 @@ while [ "$#" -gt 0 ]; do
       INCLUDE_LAST_RUN=1
       shift
       ;;
+    --last-run=*)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RUN=1
+      CMD_LAST_RUN_TAIL="${1#--last-run=}"
+      shift
+      ;;
     --last-record)
       CTX_MODE="compact"
       INCLUDE_LAST_RECORD=1
+      shift
+      ;;
+    --last-record=*)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RECORD=1
+      CMD_LAST_RECORD_TAIL="${1#--last-record=}"
       shift
       ;;
     --full-context)

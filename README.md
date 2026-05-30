@@ -183,25 +183,28 @@ README
 | ---------------- | -------------------------------------------- |
 | （默认）             | 最小上下文：pwd、user/host、backend、短安全规则摘要          |
 | `-c` / `--context` | 精简上下文：pwd、git branch/status、df、last-run/last-record meta |
-| `--last-run`     | 精简上下文 + last-run 日志尾部（默认 200 行）              |
-| `--last-record`  | 精简上下文 + last-record 日志尾部（默认 300 行）           |
-| `--full-context` | 完整上下文（调用 cmd-context，包括目录列表等）               |
+| `--last-run[=N]` | 精简上下文 + last-run 日志尾部（默认 200 行，可显式指定行数如 `--last-run=500`） |
+| `--last-record[=N]` | 精简上下文 + last-record 日志尾部（默认 300 行，可显式指定行数如 `--last-record=500`） |
+| `--full-context` | 完整上下文（调用 cmd-context，包括目录列表、终端输出日志尾部、最近 50 行 bash 历史） |
 
 示例：
 
 ```bash
 cmd "帮我解释这条命令"              # 最小上下文，省 token
 cmd -c "当前 Git 有什么变更？"       # 精简上下文
-cmd --last-run "分析最近运行的命令输出"  # 含 last-run 日志
-cmd --last-record "分析录制的终端日志"   # 含 last-record 日志
+cmd --last-run "分析最近运行的命令输出"  # 含 last-run 日志（默认 200 行）
+cmd --last-run=500 "分析完整输出"    # 含 last-run 日志（显式 500 行）
+cmd --last-record=100 "快速看日志"   # 含 last-record 日志（显式 100 行）
 cmd --full-context "需要完整环境信息"   # 完整上下文
 ```
 
 重要说明：
 
-- **Recent Bash History 不会默认发送给模型**。如需分析终端历史，请使用 `--full-context` 或显式提供历史内容。
+- **Recent Bash History 不会默认发送给模型**。`--full-context` 模式下发送最近 50 行（可通过 `CMD_HISTORY_LINES` 环境变量调整）。
+- `--full-context` 包含：目录列表（`ls -la`）、git status、磁盘使用、bash 历史（50 行）、last-run/last-record 日志尾部。
 - `cmd-context` 命令只是生成 context 文件，不代表每次 `cmd` 都会发送完整 context。
-- 可通过环境变量调整日志尾部行数：`CMD_LAST_RUN_TAIL=200`、`CMD_LAST_RECORD_TAIL=300`。
+- 可通过环境变量调整日志尾部行数：`CMD_LAST_RUN_TAIL=200`、`CMD_LAST_RECORD_TAIL=300`、`CMD_HISTORY_LINES=50`。
+- 也可以在命令行直接指定行数：`--last-run=500`、`--last-record=100`。
 
 ---
 
