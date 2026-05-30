@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.0
+
+Context injection optimization: default minimal context, on-demand loading.
+
+Features:
+
+- `cmd` and `cmdx` now default to **minimal context** (pwd, user/host, backend, short policy summary).
+- New context mode flags:
+  - `-c` / `--context`: compact context (git status, disk, last-run/last-record meta).
+  - `--last-run`: compact context + last-run output.log tail.
+  - `--last-record`: compact context + last-record output.log tail.
+  - `--full-context`: full context via cmd-context (directory listing, bash history, etc.).
+- Recent Bash History is **no longer sent by default**; only included with `--full-context`.
+- Added `lib/copilot-cmd-context.sh` with shared context helper functions.
+- Configurable tail line counts via `CMD_LAST_RUN_TAIL` and `CMD_LAST_RECORD_TAIL` environment variables.
+- Updated README with context mode documentation.
+
+Security:
+
+- Bash history no longer leaks to model by default.
+- No default directory listing sent to model.
+- `cmdx` human approval mechanism unchanged.
+
 ## Unreleased
 
 - Prepare the project for open-source release.

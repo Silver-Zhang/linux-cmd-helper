@@ -54,7 +54,7 @@ mkdir -p "$DIR"
   echo "## Recent Bash History"
   echo '```text'
   if [ -f "$HOME/.bash_history" ]; then
-    tail -50 "$HOME/.bash_history" 2>/dev/null || true
+    tail -"${CMD_HISTORY_LINES:-50}" "$HOME/.bash_history" 2>/dev/null || true
   else
     echo "No ~/.bash_history found."
   fi
