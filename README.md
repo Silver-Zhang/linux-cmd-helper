@@ -18,44 +18,51 @@
 
 安装后会提供以下命令：
 
-| 命令                      | 作用                                      |
-| ----------------------- | --------------------------------------- |
-| `cmd`                   | 非执行型 AI 问答助手，回答完返回普通 shell              |
-| `cmdx`                  | 审批执行型助手，AI 可提出命令，但必须用户确认后才执行            |
-| `cmd-chat`              | 进入 cmd 专用 Copilot CLI 连续对话界面            |
-| `cmd-context`           | 生成当前终端上下文快照                             |
-| `cmd-run`               | 执行单条命令并保存日志                             |
-| `cmd-record`            | 开启一个被记录的 shell 会话，保存后续输出                |
-| `cmd-suggest`           | 根据当前上下文和日志推荐可继续提问的问题                    |
-| `cmd-clean`             | 清理 cmd session/cache，但移动到回收站            |
-| `cmd-trash-list`        | 查看回收站内容                                 |
-| `cmd-trash-empty`       | 手动永久清空回收站                               |
-| `cmd-trash-prune`       | 删除 N 天以前的回收站内容                          |
-| `cmd-trash-auto-on`     | 开启定时清理回收站                               |
-| `cmd-trash-auto-off`    | 关闭定时清理回收站                               |
-| `cmd-trash-auto-status` | 查看定时清理状态                                |
-| `cmd-model`             | 进入 GitHub Copilot native 模型选择流程         |
-| `cmd-model-set`         | 手动记录当前 Copilot native 显示模型名             |
-| `cmd-model-current`     | 查看当前记录的模型信息                             |
-| `cmd-question`          | 查看最近一次通过 `cmd` 或 `cmdx` 提交的问题           |
-| `cmd-model`    | 进入 cmd 专用的 GitHub Copilot native CLI 环境 |
-| `copilot-cmd-send`      | 内部辅助命令，用于向同一 cmd session 发送 prompt      |
+| 命令                      | 作用                                                   |
+| ----------------------- | ---------------------------------------------------- |
+| `cmd`                   | 非执行型 AI 问答助手，继续当前任务上下文，回答完返回普通 shell               |
+| `cmdx`                  | 审批执行型助手，AI 可提出命令，但必须用户确认后才执行                        |
+| `cmd-chat`              | 进入 cmd 专用 Copilot CLI 连续对话界面                         |
+| `cmd-new`               | 新开一个任务上下文（不删除旧对话）                                    |
+| `cmd-resume`            | 从历史 cmd session 中选择旧任务并恢复                             |
+| `cmd-context`           | 生成当前终端上下文快照                                          |
+| `cmd-run`               | 执行单条命令并保存日志                                          |
+| `cmd-record`            | 开启一个被记录的 shell 会话，保存后续输出                             |
+| `cmd-suggest`           | 根据当前上下文和日志推荐可继续提问的问题                                 |
+| `cmd-clean`             | 清理 cmd session/cache，但移动到回收站                         |
+| `cmd-trash-list`        | 查看回收站内容                                              |
+| `cmd-trash-empty`       | 手动永久清空回收站                                            |
+| `cmd-trash-prune`       | 删除 N 天以前的回收站内容                                       |
+| `cmd-trash-auto-on`     | 开启定时清理回收站                                            |
+| `cmd-trash-auto-off`    | 关闭定时清理回收站                                            |
+| `cmd-trash-auto-status` | 查看定时清理状态                                             |
+| `cmd-model`             | 进入 cmd 专用 GitHub Copilot native 环境，用于 `/login` 和 `/model` |
+| `cmd-model-set`         | 手动记录当前 Copilot native 显示模型名                           |
+| `cmd-model-current`     | 查看当前记录的模型信息                                          |
+| `cmd-question`          | 查看最近一次通过 `cmd` 或 `cmdx` 提交的问题                        |
+| `copilot-cmd-send`      | 内部辅助命令，用于向同一 cmd session 发送 prompt                   |
 
 ---
 
 ## 2. 安装方式
 
-公共安装包路径：
+### 方式一：从 GitHub clone 安装（推荐）
 
 ```bash
-/data/public/tools/cmd-helper
+git clone https://github.com/Silver-Zhang/linux-cmd-helper.git
+cd linux-cmd-helper
+bash install.sh
 ```
 
-普通用户执行：
+### 方式二：从共享服务器公共目录安装
+
+如果所在服务器已由管理员部署了公共包（路径因服务器而异，以下为示例）：
 
 ```bash
-bash /data/public/tools/cmd-helper/install.sh
+bash /data/public/tools/linux-cmd-helper/install.sh
 ```
+
+> 注意：`/data/public/tools/linux-cmd-helper` 是共享服务器的示例部署路径，不是通用 Linux 环境中必然存在的路径。请向服务器管理员确认实际路径。
 
 安装脚本会将工具安装到当前用户自己的目录：
 
@@ -352,13 +359,13 @@ cmd-new "新任务说明"
 例如，你刚刚完成了 RMC 编译报错排查，现在要开始处理另一个完全无关的问题：
 
 ```bash
-cmd-new "现在开始一个新任务：帮我排查 zhangjunxiao 用户下 Copilot CLI 登录问题。"
+cmd-new "现在开始一个新任务：帮我排查当前用户下 Copilot CLI 登录问题。"
 ```
 
 或者：
 
 ```bash
-cmd-new "现在开始一个新任务：帮我检查 /data/public/tools/cmd-helper 的公共安装权限。"
+cmd-new "现在开始一个新任务：帮我检查公共工具包的安装权限。"
 ```
 
 `cmd-new` 的作用是：**新建一个新的 cmd chat session，并把后续 `cmd` / `cmdx` / `cmd-chat` 切换到这条新的上下文链上。**
@@ -518,8 +525,8 @@ cmd "我已经执行了检查命令，结果如下：..."
 #### 示例 2：切换到公共工具包权限问题
 
 ```bash
-cmd-new "新任务：排查 /data/public/tools/cmd-helper 普通用户安装权限问题。"
-cmd "wenmilin 安装时报 Permission denied，帮我判断原因。"
+cmd-new "新任务：排查共享服务器公共工具包普通用户安装权限问题。"
+cmd "某用户安装时报 Permission denied，帮我判断原因。"
 cmdx "必要时提出只读命令检查文件 owner、group、mode 和 ACL。"
 ```
 
@@ -1270,10 +1277,10 @@ cmd-chat
   cache 回收站
 ```
 
-公共安装包目录：
+公共安装包目录（示例，实际路径因服务器而异）：
 
 ```bash
-/data/public/tools/cmd-helper
+/data/public/tools/linux-cmd-helper
 ```
 
 公共目录不应存放任何用户密钥或用户 session。
@@ -1282,10 +1289,17 @@ cmd-chat
 
 ## 19. 更新方式
 
-公共包更新后，用户重新执行：
+如果从 GitHub clone 安装，拉取最新代码后重新执行：
 
 ```bash
-bash /data/public/tools/cmd-helper/install.sh
+git pull
+bash install.sh
+```
+
+如果从共享服务器公共目录安装，公共包更新后重新执行（路径以实际部署为准）：
+
+```bash
+bash /data/public/tools/linux-cmd-helper/install.sh
 ```
 
 安装脚本会覆盖：
@@ -1308,10 +1322,16 @@ bash /data/public/tools/cmd-helper/install.sh
 
 ## 20. 卸载方式
 
-执行：
+如果从 GitHub clone 安装，在仓库目录执行：
 
 ```bash
-bash /data/public/tools/cmd-helper/uninstall.sh
+bash uninstall.sh
+```
+
+如果从共享服务器公共目录安装（路径以实际部署为准）：
+
+```bash
+bash /data/public/tools/linux-cmd-helper/uninstall.sh
 ```
 
 卸载脚本会删除安装到：
@@ -1459,10 +1479,12 @@ cmd-chat
 
 ## 23. 维护者说明
 
+以下说明适用于在共享服务器上维护公共部署包的管理员。公共包路径因服务器而异，以下以 `/data/public/tools/linux-cmd-helper` 为示例。
+
 公共包结构建议：
 
 ```text
-/data/public/tools/cmd-helper/
+/data/public/tools/linux-cmd-helper/
 ├── VERSION
 ├── README.md
 ├── install.sh
@@ -1475,7 +1497,7 @@ cmd-chat
 发布当前用户已调好的版本到公共目录时，可执行：
 
 ```bash
-PUB="/data/public/tools/cmd-helper"
+PUB="/data/public/tools/linux-cmd-helper"
 
 mkdir -p "$PUB/bin" "$PUB/lib" "$PUB/config"
 
@@ -1483,7 +1505,7 @@ for f in \
   cmd cmdx cmd-chat cmd-context cmd-run cmd-record cmd-suggest cmd-clean \
   cmd-trash-list cmd-trash-empty cmd-trash-prune cmd-trash-auto-on cmd-trash-auto-off \
   cmd-trash-auto-status cmd-model cmd-model-set cmd-model-current cmd-question \
-  copilot-cmd-send cmd-model
+  cmd-new cmd-resume copilot-cmd-send
 do
   if [ -f "$HOME/.local/bin/$f" ]; then
     cp -a "$HOME/.local/bin/$f" "$PUB/bin/"
