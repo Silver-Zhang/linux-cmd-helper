@@ -1460,9 +1460,47 @@ bash /data/public/tools/linux-cmd-helper/uninstall.sh
 
 ---
 
-## 23. 常见问题
+## 23. 终端输出美化
 
-### 23.1 `cmd: command not found`
+`cmd` 和 `cmdx` 在交互式终端中默认启用轻量美化输出，包括：
+
+- 模型信息、问题预览、AI 回答、命令审批和执行输出之间有清晰分界；
+- 等待模型响应时显示 spinner 动画；
+- `cmdx --loop` 每轮显示清晰的 round header。
+
+### 环境变量控制
+
+| 环境变量 | 效果 |
+| --- | --- |
+| `CMD_PLAIN=1` | 关闭所有美化（颜色、spinner、box 样式），使用纯文本输出 |
+| `CMD_NO_SPINNER=1` | 只关闭 spinner，保留轻量分隔线和样式 |
+| `NO_COLOR=1` | 关闭颜色输出（兼容 [no-color.org](https://no-color.org) 标准） |
+
+示例：
+
+```bash
+CMD_PLAIN=1 cmd "问题"
+CMD_NO_SPINNER=1 cmdx "问题"
+NO_COLOR=1 cmd "问题"
+```
+
+### 管道 / 重定向自动退化
+
+当 stdout 不是交互式终端时（管道或重定向），美化自动关闭，输出为纯文本：
+
+```bash
+cmd "问题" > out.txt       # 纯文本，无 ANSI 控制符
+cmd "问题" | tee out.txt   # 纯文本
+cmd "问题" | glow -        # 可配合 glow 渲染 Markdown
+```
+
+`glow` 不是本项目依赖，但用户可自行安装使用。
+
+---
+
+## 24. 常见问题
+
+### 24.1 `cmd: command not found`
 
 当前 shell 临时执行：
 
@@ -1480,7 +1518,7 @@ which cmd
 
 ---
 
-### 23.2 `copilot: command not found`
+### 24.2 `copilot: command not found`
 
 说明 GitHub Copilot CLI 未安装。安装：
 
@@ -1492,7 +1530,7 @@ npm install -g @github/copilot
 
 ---
 
-### 23.3 DeepSeek 认证失败
+### 24.3 DeepSeek 认证失败
 
 检查：
 
@@ -1506,7 +1544,7 @@ test -n "$COPILOT_PROVIDER_API_KEY" && echo "DeepSeek key is set"
 
 ---
 
-### 23.4 GitHub Copilot native 报 `No authentication information found`
+### 24.4 GitHub Copilot native 报 `No authentication information found`
 
 进入 cmd 专用 native Copilot 环境：
 
@@ -1530,7 +1568,7 @@ cmd --copilot "只回答 OK"
 
 ---
 
-### 23.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
+### 24.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
 
 Copilot `/model` 菜单显示名不一定能作为 `--model` 参数使用。推荐做法：
 
@@ -1560,7 +1598,7 @@ cmd --copilot -m "GPT-5 mini" "问题"
 
 ---
 
-### 23.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
+### 24.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
 
 当前推荐使用：
 
@@ -1577,7 +1615,7 @@ cmd-chat
 
 ---
 
-## 24. 维护者说明
+## 25. 维护者说明
 
 以下说明适用于在共享服务器上维护公共部署包的管理员。公共包路径因服务器而异，以下以 `/data/public/tools/linux-cmd-helper` 为示例。
 
@@ -1628,7 +1666,7 @@ chmod 644 "$PUB/README.md"
 
 ---
 
-## 25. 最小测试流程
+## 26. 最小测试流程
 
 安装完成后，建议每个用户测试：
 
@@ -1670,7 +1708,7 @@ cmd --copilot "只回答 OK"
 
 ---
 
-## 26. 推荐日常用法总结
+## 27. 推荐日常用法总结
 
 普通问题：
 

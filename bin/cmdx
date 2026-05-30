@@ -5,6 +5,8 @@ set -euo pipefail
 source "$HOME/.local/lib/copilot-cmd-env.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-context.sh"
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-ui.sh"
 
 usage() {
   cat <<'USAGE'
@@ -262,20 +264,8 @@ mkdir -p "$QUESTION_DIR"
 cp "$USER_INPUT" "$QUESTION_DIR/question.txt"
 ln -sfn "$QUESTION_DIR" "$BASE/last-question"
 
-echo "" >&2
-echo "[cmdx] question saved: $QUESTION_DIR/question.txt" >&2
-echo "[cmdx] question preview:" >&2
-echo "----------------------------------------" >&2
-QUESTION_LINES="$(wc -l < "$USER_INPUT" | tr -d ' ')"
-PREVIEW_LINES="${CMD_QUESTION_PREVIEW_LINES:-80}"
-if [ "$QUESTION_LINES" -le "$PREVIEW_LINES" ]; then
-  sed 's/^/[cmdx] > /' "$USER_INPUT" >&2
-else
-  head -n "$PREVIEW_LINES" "$USER_INPUT" | sed 's/^/[cmdx] > /' >&2
-  echo "[cmdx] ... question is longer than $PREVIEW_LINES lines; full text saved." >&2
-fi
-echo "----------------------------------------" >&2
-echo "" >&2
+ui_info "cmdx" "question saved: $QUESTION_DIR/question.txt"
+ui_question_preview "$USER_INPUT" "${CMD_QUESTION_PREVIEW_LINES:-80}"
 
 # 防止过长输入
 MAX_BYTES=120000
@@ -412,27 +402,31 @@ HEADER
 # -----------------------------
 # 3. 显示后端和模型
 # -----------------------------
-echo "" >&2
-echo "[cmdx] context: $CTX_MODE" >&2
+_CMDX_BACKEND_DISPLAY=""
+_CMDX_MODEL_DISPLAY=""
+
 if [ "$BACKEND" = "deepseek" ]; then
-  echo "[cmdx] backend: DeepSeek BYOK" >&2
-  echo "[cmdx] model:   ${COPILOT_MODEL:-unknown}" >&2
+  _CMDX_BACKEND_DISPLAY="DeepSeek BYOK"
+  _CMDX_MODEL_DISPLAY="${COPILOT_MODEL:-unknown}"
 else
-  echo "[cmdx] backend: GitHub Copilot native" >&2
+  _CMDX_BACKEND_DISPLAY="GitHub Copilot native"
   if [ -n "${MODEL:-}" ]; then
-    echo "[cmdx] model:   ${MODEL}  (--model)" >&2
+    _CMDX_MODEL_DISPLAY="${MODEL} (--model)"
   else
     NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
     if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
-      echo "[cmdx] model:   $(cat "$NATIVE_MODEL_FILE")" >&2
-      echo "[cmdx] note:    display label recorded by cmd-model; actual model is controlled by Copilot CLI /model" >&2
+      _CMDX_MODEL_DISPLAY="$(cat "$NATIVE_MODEL_FILE")"
     else
-      echo "[cmdx] model:   GitHub Copilot CLI current/default model" >&2
-      echo "[cmdx] note:    run cmd-model to select and record a concrete display model" >&2
+      _CMDX_MODEL_DISPLAY="Copilot CLI current/default"
     fi
   fi
 fi
-echo "" >&2
+
+if [ "$LOOP_MODE" -eq 1 ]; then
+  ui_model_info "cmdx loop" "$_CMDX_BACKEND_DISPLAY" "$_CMDX_MODEL_DISPLAY" "$CTX_MODE" "mode" "multi-round approval" "max rounds" "$MAX_ROUNDS"
+else
+  ui_model_info "cmdx" "$_CMDX_BACKEND_DISPLAY" "$_CMDX_MODEL_DISPLAY" "$CTX_MODE" "mode" "single-round approval"
+fi
 
 # =============================================================================
 # LOOP MODE vs SINGLE-ROUND MODE
@@ -442,8 +436,6 @@ if [ "$LOOP_MODE" -eq 1 ]; then
   # -----------------------------------------------------------
   # LOOP MODE: multi-round user-approved command execution
   # -----------------------------------------------------------
-  echo "[cmdx] loop mode: max $MAX_ROUNDS rounds" >&2
-  echo "" >&2
 
   LOOP_TS="$(date '+%Y%m%d-%H%M%S')"
   LOOP_DIR="$BASE/approved-runs/${LOOP_TS}-loop"
@@ -528,25 +520,27 @@ LOOP_SYSTEM
   LAST_RC=0
 
   for (( ROUND=1; ROUND<=MAX_ROUNDS; ROUND++ )); do
-    echo "" >&2
-    echo "[cmdx] loop round $ROUND/$MAX_ROUNDS" >&2
-    echo "" >&2
+    ui_round_header "$ROUND" "$MAX_ROUNDS"
 
     ROUND_RESPONSE="$TMP_DIR/loop_response_${ROUND}.txt"
     ROUND_CMD="$TMP_DIR/loop_commands_${ROUND}.sh"
 
     # Send prompt to AI
+    ui_spinner_start "Waiting for model response..."
     if ! copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
         "${COPILOT_EXTRA_ARGS[@]}" \
         --deny-tool='shell(*)' \
-        --deny-tool='write' | tee "$ROUND_RESPONSE"; then
-      echo "" >&2
-      echo "[cmdx] retrying with --deny-tool=shell" >&2
+        --deny-tool='write' > "$ROUND_RESPONSE" 2>&1; then
       copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
         "${COPILOT_EXTRA_ARGS[@]}" \
         --deny-tool='shell' \
-        --deny-tool='write' | tee "$ROUND_RESPONSE"
+        --deny-tool='write' > "$ROUND_RESPONSE" 2>&1
     fi
+    ui_spinner_stop
+
+    ui_ai_begin
+    cat "$ROUND_RESPONSE"
+    ui_ai_end
 
     # Extract commands
     awk '
@@ -557,19 +551,12 @@ LOOP_SYSTEM
 
     # Check if AI proposed commands
     if ! grep -v '^[[:space:]]*$' "$ROUND_CMD" | grep -v '^[[:space:]]*#' >/dev/null 2>&1; then
-      echo "" >&2
-      echo "[cmdx] no further command request; loop finished." >&2
+      ui_info "cmdx" "no further command request; loop finished."
       break
     fi
 
     # Display proposed commands
-    echo
-    echo "============================================================"
-    echo "[cmdx] AI 建议执行以下命令（round $ROUND/$MAX_ROUNDS）："
-    echo "============================================================"
-    nl -ba "$ROUND_CMD"
-    echo "============================================================"
-    echo
+    ui_cmd_block "$ROUND_CMD"
 
     # User approval
     if grep -Eiq '(^|[;&|[:space:]])sudo([[:space:]]|$)|rm[[:space:]]+-rf|mkfs|dd[[:space:]]+if=|chmod[[:space:]]+-R|chown[[:space:]]+-R|iptables|ufw|docker[[:space:]]+(rm|rmi|system[[:space:]]+prune)|shutdown|reboot|systemctl[[:space:]]+(stop|restart|disable)' "$ROUND_CMD"; then
@@ -631,31 +618,31 @@ LOOP_SYSTEM
     } > "$ROUND_DIR/meta.txt"
 
     echo
-    echo "[cmdx] executing commands..."
-    echo "[cmdx] log: $ROUND_DIR/output.log"
-    echo
+    ui_info "cmdx" "executing commands..."
+    ui_info "cmdx" "log: $ROUND_DIR/output.log"
+    ui_exec_begin
 
     set +e
     bash "$ROUND_DIR/commands.sh" 2>&1 | tee "$ROUND_DIR/output.log"
     LAST_RC=${PIPESTATUS[0]}
     set -e
 
+    ui_exec_end
+
     {
       echo "time_end: $(date '+%F %T %Z')"
       echo "exit_code: $LAST_RC"
     } >> "$ROUND_DIR/meta.txt"
 
-    echo
-    echo "[cmdx] round $ROUND exit_code=$LAST_RC"
-    echo "[cmdx] saved: $ROUND_DIR"
+    ui_info "cmdx" "round $ROUND exit_code=$LAST_RC"
+    ui_info "cmdx" "saved: $ROUND_DIR"
 
     ln -sfn "$LOOP_DIR" "$BASE/last-approved-run"
 
     # If we've reached max rounds, stop
     if [ "$ROUND" -eq "$MAX_ROUNDS" ]; then
-      echo "" >&2
-      echo "[cmdx] reached max rounds; stop." >&2
-      echo "[cmdx] you can re-run cmdx --loop to continue." >&2
+      ui_info "cmdx" "reached max rounds; stop."
+      ui_info "cmdx" "you can re-run cmdx --loop to continue."
       break
     fi
 
@@ -727,17 +714,21 @@ fi
 # -----------------------------
 # 4. 第一轮：让 AI 判断是否需要命令
 # -----------------------------
+ui_spinner_start "Waiting for model response..."
 if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
     --deny-tool='shell(*)' \
-    --deny-tool='write' | tee "$RESPONSE_FILE"; then
-  echo "" >&2
-  echo "[cmdx] retrying with --deny-tool=shell" >&2
+    --deny-tool='write' > "$RESPONSE_FILE" 2>&1; then
   copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
     --deny-tool='shell' \
-    --deny-tool='write' | tee "$RESPONSE_FILE"
+    --deny-tool='write' > "$RESPONSE_FILE" 2>&1
 fi
+ui_spinner_stop
+
+ui_ai_begin
+cat "$RESPONSE_FILE"
+ui_ai_end
 
 awk '
   /^__CMDX_BEGIN__$/ {flag=1; next}
@@ -750,19 +741,13 @@ if ! grep -v '^[[:space:]]*$' "$CMD_FILE" | grep -v '^[[:space:]]*#' >/dev/null 
   exit 0
 fi
 
-echo
-echo "============================================================"
-echo "[cmdx] AI 建议执行以下命令："
-echo "============================================================"
-nl -ba "$CMD_FILE"
-echo "============================================================"
-echo
+ui_cmd_block "$CMD_FILE"
 
 # -----------------------------
 # 5. 用户审批
 # -----------------------------
 if grep -Eiq '(^|[;&|[:space:]])sudo([[:space:]]|$)|rm[[:space:]]+-rf|mkfs|dd[[:space:]]+if=|chmod[[:space:]]+-R|chown[[:space:]]+-R|iptables|ufw|docker[[:space:]]+(rm|rmi|system[[:space:]]+prune)|shutdown|reboot|systemctl[[:space:]]+(stop|restart|disable)' "$CMD_FILE"; then
-  echo "[cmdx] WARNING: 检测到潜在高风险命令。"
+  ui_warn "检测到潜在高风险命令。"
   echo "[cmdx] 如确需执行，必须输入 YES I UNDERSTAND。"
   read -r -p "确认执行？ " ans
   if [ "$ans" != "YES I UNDERSTAND" ]; then
@@ -827,15 +812,16 @@ chmod 700 "$RUN_DIR/commands.sh"
   fi
 } > "$RUN_DIR/meta.txt"
 
-echo
-echo "[cmdx] executing commands..."
-echo "[cmdx] log: $RUN_DIR/output.log"
-echo
+ui_info "cmdx" "executing commands..."
+ui_info "cmdx" "log: $RUN_DIR/output.log"
+ui_exec_begin
 
 set +e
 bash "$RUN_DIR/commands.sh" 2>&1 | tee "$RUN_DIR/output.log"
 RC=${PIPESTATUS[0]}
 set -e
+
+ui_exec_end
 
 {
   echo "time_end: $(date '+%F %T %Z')"
@@ -844,9 +830,8 @@ set -e
 
 ln -sfn "$RUN_DIR" "$BASE/last-approved-run"
 
-echo
-echo "[cmdx] exit_code=$RC"
-echo "[cmdx] saved: $RUN_DIR"
+ui_info "cmdx" "exit_code=$RC"
+ui_info "cmdx" "saved: $RUN_DIR"
 
 echo
 read -r -p "是否把执行输出发回 AI 继续分析？直接回车默认 yes，输入 no 跳过: " follow
@@ -895,19 +880,24 @@ HEADER
   echo '```'
 } > "$FOLLOW_PROMPT"
 
-echo
-echo "============================================================"
-echo "[cmdx] AI follow-up analysis"
-echo "============================================================"
-echo
+ui_spinner_start "Waiting for follow-up analysis..."
 
-copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
+FOLLOW_RESPONSE="$TMP_DIR/followup_response.txt"
+if ! copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
   "${COPILOT_EXTRA_ARGS[@]}" \
   --deny-tool='shell(*)' \
-  --deny-tool='write' || \
-copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
-  "${COPILOT_EXTRA_ARGS[@]}" \
-  --deny-tool='shell' \
-  --deny-tool='write'
+  --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1; then
+  copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
+    "${COPILOT_EXTRA_ARGS[@]}" \
+    --deny-tool='shell' \
+    --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1
+fi
+
+ui_spinner_stop
+
+_UI_CURRENT_SECTION="follow-up analysis"
+ui_section "follow-up analysis"
+cat "$FOLLOW_RESPONSE"
+ui_section_end
 
 exit "$RC"
