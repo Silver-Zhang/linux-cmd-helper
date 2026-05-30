@@ -175,9 +175,42 @@ README
 
 ---
 
-## 5. 基本使用
+## 5. 上下文模式
 
-### 5.1 默认问答：DeepSeek Flash
+`cmd` 和 `cmdx` 默认使用**最小上下文**发送给模型，节省 token 并避免信息泄露。如需更多上下文，使用以下选项显式加载：
+
+| 选项               | 说明                                           |
+| ---------------- | -------------------------------------------- |
+| （默认）             | 最小上下文：pwd、user/host、backend、短安全规则摘要          |
+| `-c` / `--context` | 精简上下文：pwd、git branch/status、df、last-run/last-record meta |
+| `--last-run[=N]` | 精简上下文 + last-run 日志尾部（默认 200 行，可显式指定行数如 `--last-run=500`） |
+| `--last-record[=N]` | 精简上下文 + last-record 日志尾部（默认 300 行，可显式指定行数如 `--last-record=500`） |
+| `--full-context` | 完整上下文（调用 cmd-context，包括目录列表、终端输出日志尾部、最近 50 行 bash 历史） |
+
+示例：
+
+```bash
+cmd "帮我解释这条命令"              # 最小上下文，省 token
+cmd -c "当前 Git 有什么变更？"       # 精简上下文
+cmd --last-run "分析最近运行的命令输出"  # 含 last-run 日志（默认 200 行）
+cmd --last-run=500 "分析完整输出"    # 含 last-run 日志（显式 500 行）
+cmd --last-record=100 "快速看日志"   # 含 last-record 日志（显式 100 行）
+cmd --full-context "需要完整环境信息"   # 完整上下文
+```
+
+重要说明：
+
+- **Recent Bash History 不会默认发送给模型**。`--full-context` 模式下发送最近 50 行（可通过 `CMD_HISTORY_LINES` 环境变量调整）。
+- `--full-context` 包含：目录列表（`ls -la`）、git status、磁盘使用、bash 历史（50 行）、last-run/last-record 日志尾部。
+- `cmd-context` 命令只是生成 context 文件，不代表每次 `cmd` 都会发送完整 context。
+- 可通过环境变量调整日志尾部行数：`CMD_LAST_RUN_TAIL=200`、`CMD_LAST_RECORD_TAIL=300`、`CMD_HISTORY_LINES=50`。
+- 也可以在命令行直接指定行数：`--last-run=500`、`--last-record=100`。
+
+---
+
+## 6. 基本使用
+
+### 6.1 默认问答：DeepSeek Flash
 
 ```bash
 cmd "只回答 OK"
@@ -194,7 +227,7 @@ deepseek-v4-flash
 
 ---
 
-### 5.2 使用 DeepSeek Pro
+### 6.2 使用 DeepSeek Pro
 
 ```bash
 cmd -m pro "请深入分析最近 cmd-record 的编译错误"
@@ -211,7 +244,7 @@ deepseek-v4-pro
 
 ---
 
-### 5.3 多行输入
+### 6.3 多行输入
 
 如果问题较长，不适合放在引号中：
 
@@ -238,7 +271,7 @@ compilation terminated.
 
 ---
 
-### 5.4 heredoc 输入
+### 6.4 heredoc 输入
 
 ```bash
 cmd <<'EOF'
@@ -254,7 +287,7 @@ EOF
 
 ---
 
-### 5.5 从文件输入
+### 6.5 从文件输入
 
 ```bash
 cmd -f /tmp/error.log
@@ -272,7 +305,7 @@ cmd -f /tmp/error.log
 
 ---
 
-### 5.6 使用编辑器输入
+### 6.6 使用编辑器输入
 
 ```bash
 cmd -e
@@ -294,7 +327,7 @@ cmd-question
 
 ---
 
-## 6. 会话机制：`cmd`、`cmdx`、`cmd-chat`、`cmd-new` 的关系
+## 7. 会话机制：`cmd`、`cmdx`、`cmd-chat`、`cmd-new` 的关系
 
 `cmd-helper` 使用一个 cmd 专用 Copilot session 目录：
 
@@ -321,7 +354,7 @@ cmd-chat
 
 ---
 
-### 6.1 一直使用 `cmd` 会发生什么？
+### 7.1 一直使用 `cmd` 会发生什么？
 
 如果你一直使用：
 
@@ -348,7 +381,7 @@ cmd "问题4"
 
 ---
 
-### 6.2 什么时候应该使用 `cmd-new`？
+### 7.2 什么时候应该使用 `cmd-new`？
 
 当你要切换到一个新的、无关的任务时，建议使用：
 
@@ -372,7 +405,7 @@ cmd-new "现在开始一个新任务：帮我检查公共工具包的安装权�
 
 ---
 
-### 6.3 `cmd-new` 会删除以前的对话吗？
+### 7.3 `cmd-new` 会删除以前的对话吗？
 
 不会。
 
@@ -403,7 +436,7 @@ cmd-clean sessions = 清理 cmd session
 
 ---
 
-### 6.4 `cmd-new`、`cmd`、`cmdx`、`cmd-chat` 的推荐用法
+### 7.4 `cmd-new`、`cmd`、`cmdx`、`cmd-chat` 的推荐用法
 
 开始一个新任务：
 
@@ -443,7 +476,7 @@ cmd-resume
 
 ---
 
-### 6.5 `cmd-clean sessions` 与 `cmd-new` 的区别
+### 7.5 `cmd-clean sessions` 与 `cmd-new` 的区别
 
 不要把 `cmd-clean sessions` 当作“新开任务”使用。
 
@@ -475,7 +508,7 @@ cmd-new "新任务说明"
 
 ---
 
-### 6.6 推荐工作流
+### 7.6 推荐工作流
 
 对于每个独立任务，建议这样使用：
 
@@ -511,7 +544,7 @@ cmd-resume
 
 ---
 
-### 6.7 典型示例
+### 7.7 典型示例
 
 #### 示例 1：RMC 编译错误排查
 
@@ -544,7 +577,7 @@ cmd "继续刚才的 RMC 编译问题。"
 
 ---
 
-## 7. `cmdx`：人工审批式命令执行
+## 8. `cmdx`：人工审批式命令执行
 
 `cmdx` 用于处理“AI 需要运行终端命令才能判断”的问题。
 
@@ -569,7 +602,7 @@ cmdx "请判断当前目录是否是 Git 仓库，必要时提出只读命令"
 
 ---
 
-### 7.1 `cmdx` 使用 DeepSeek Pro
+### 8.1 `cmdx` 使用 DeepSeek Pro
 
 ```bash
 cmdx -m pro "请分析这个复杂编译问题，必要时提出只读检查命令"
@@ -577,7 +610,7 @@ cmdx -m pro "请分析这个复杂编译问题，必要时提出只读检查命�
 
 ---
 
-### 7.2 `cmdx` 多行输入
+### 8.2 `cmdx` 多行输入
 
 ```bash
 cmdx -
@@ -587,7 +620,7 @@ cmdx -
 
 ---
 
-### 7.3 `cmdx` 文件输入
+### 8.3 `cmdx` 文件输入
 
 ```bash
 cmdx -f /tmp/error.log
@@ -595,7 +628,7 @@ cmdx -f /tmp/error.log
 
 ---
 
-### 7.4 `cmdx` 编辑器输入
+### 8.4 `cmdx` 编辑器输入
 
 ```bash
 cmdx -e
@@ -603,7 +636,7 @@ cmdx -e
 
 ---
 
-### 7.5 `cmdx` 安全策略
+### 8.5 `cmdx` 安全策略
 
 普通命令需要输入：
 
@@ -661,7 +694,7 @@ tail -200 ~/.cache/copilot-cmd/last-approved-run/output.log
 
 ---
 
-## 8. `cmd-chat`：进入连续交互模式
+## 9. `cmd-chat`：进入连续交互模式
 
 默认进入 DeepSeek Flash：
 
@@ -701,11 +734,11 @@ cmd "问题"
 
 ---
 
-## 9. GitHub Copilot native 模型
+## 10. GitHub Copilot native 模型
 
 默认情况下，`cmd` 和 `cmdx` 使用 DeepSeek。若要使用 GitHub Copilot 原生模型，需要先完成 native 认证。
 
-### 9.1 进入 cmd 专用 native Copilot 环境并选择模型
+### 10.1 进入 cmd 专用 native Copilot 环境并选择模型
 
 ```bash
 cmd-model
@@ -735,7 +768,7 @@ cmd-model
 
 ---
 
-### 9.2 使用 Copilot native 后端
+### 10.2 使用 Copilot native 后端
 
 ```bash
 cmd --copilot "只回答 OK"
@@ -751,7 +784,7 @@ cmd-chat --copilot
 
 ---
 
-### 9.3 显示当前 native 模型名
+### 10.3 显示当前 native 模型名
 
 Copilot CLI 的 `/model` 菜单显示名不一定能作为 `--model` 参数使用。因此 `cmd-helper` 不强行把显示名传给 `--model`。
 
@@ -799,7 +832,7 @@ cmd --copilot "问题"
 
 ---
 
-## 10. Copilot native 模型列表维护
+## 11. Copilot native 模型列表维护
 
 每个用户的 Copilot native 模型列表位于：
 
@@ -846,7 +879,7 @@ GPT-4.1
 
 ---
 
-## 11. `cmd-context`：上下文快照
+## 12. `cmd-context`：上下文快照
 
 ```bash
 cmd-context
@@ -885,7 +918,7 @@ Git remote
 
 ---
 
-## 12. `cmd-run`：记录单条命令
+## 13. `cmd-run`：记录单条命令
 
 ```bash
 cmd-run make -j32
@@ -924,7 +957,7 @@ cmd "请分析最近 cmd-run 的 output.log，找第一个关键错误"
 
 ---
 
-## 13. `cmd-record`：记录一段 shell 会话
+## 14. `cmd-record`：记录一段 shell 会话
 
 当你不知道哪条命令会报错，不想事后重跑长命令，可以先进入记录模式：
 
@@ -968,7 +1001,7 @@ cmd "请分析最近 cmd-record 日志中的第一个关键错误"
 
 ---
 
-## 14. `cmd-suggest`：推荐可继续提问的问题
+## 15. `cmd-suggest`：推荐可继续提问的问题
 
 ```bash
 cmd-suggest
@@ -999,9 +1032,9 @@ q    退出
 
 ---
 
-## 15. 清理机制
+## 16. 清理机制
 
-### 15.1 清理 cmd session
+### 16.1 清理 cmd session
 
 ```bash
 cmd-clean sessions
@@ -1035,7 +1068,7 @@ cmd-clean
 
 ---
 
-### 15.2 清理 cache
+### 16.2 清理 cache
 
 ```bash
 cmd-clean cache
@@ -1070,7 +1103,7 @@ latest-context
 
 ---
 
-### 15.3 全部清理
+### 16.3 全部清理
 
 ```bash
 cmd-clean all
@@ -1097,7 +1130,7 @@ cmd-clean cache
 
 ---
 
-## 16. 回收站管理
+## 17. 回收站管理
 
 查看回收站：
 
@@ -1133,7 +1166,7 @@ yes
 
 ---
 
-### 16.1 按天数清理回收站
+### 17.1 按天数清理回收站
 
 默认清理 30 天以前内容：
 
@@ -1155,7 +1188,7 @@ cmd-trash-prune 90
 
 ---
 
-### 16.2 定时清理回收站
+### 17.2 定时清理回收站
 
 默认每天 3:30 清理 30 天以前的回收站内容：
 
@@ -1183,9 +1216,9 @@ cmd-trash-auto-off
 
 ---
 
-## 17. 推荐使用场景
+## 18. 推荐使用场景
 
-### 17.1 解释命令
+### 18.1 解释命令
 
 ```bash
 cmd "解释这条命令：find /data/users -maxdepth 3 -type d -writable 2>/dev/null"
@@ -1193,7 +1226,7 @@ cmd "解释这条命令：find /data/users -maxdepth 3 -type d -writable 2>/dev/
 
 ---
 
-### 17.2 生成只读检查命令
+### 18.2 生成只读检查命令
 
 ```bash
 cmd "我想检查当前用户是否能写入其他用户 workspace，给我只读命令"
@@ -1201,7 +1234,7 @@ cmd "我想检查当前用户是否能写入其他用户 workspace，给我只�
 
 ---
 
-### 17.3 编译报错分析
+### 18.3 编译报错分析
 
 如果已经有日志：
 
@@ -1221,7 +1254,7 @@ cmd "请分析最近 cmd-record 日志中的第一个关键错误"
 
 ---
 
-### 17.4 需要执行检查命令
+### 18.4 需要执行检查命令
 
 ```bash
 cmdx "请判断当前目录是否是 Git 仓库，必要时提出只读检查命令"
@@ -1235,7 +1268,7 @@ yes
 
 ---
 
-### 17.5 连续对话
+### 18.5 连续对话
 
 ```bash
 cmd "这是第一条问题，请记住标记 CMDCTX_ALPHA"
@@ -1247,7 +1280,7 @@ cmd-chat
 
 ---
 
-## 18. 文件与目录说明
+## 19. 文件与目录说明
 
 用户安装后主要涉及：
 
@@ -1287,7 +1320,7 @@ cmd-chat
 
 ---
 
-## 19. 更新方式
+## 20. 更新方式
 
 如果从 GitHub clone 安装，拉取最新代码后重新执行：
 
@@ -1320,7 +1353,7 @@ bash /data/public/tools/linux-cmd-helper/install.sh
 
 ---
 
-## 20. 卸载方式
+## 21. 卸载方式
 
 如果从 GitHub clone 安装，在仓库目录执行：
 
@@ -1347,7 +1380,7 @@ bash /data/public/tools/linux-cmd-helper/uninstall.sh
 
 ---
 
-## 21. 安全注意事项
+## 22. 安全注意事项
 
 1. 不要使用 `sudo cmd`、`sudo cmdx`、`sudo cmd-chat`。
 2. 不要在 `/`、`/etc`、`/usr`、`/data/public` 或其他用户目录中随意运行 AI agent。
@@ -1360,9 +1393,9 @@ bash /data/public/tools/linux-cmd-helper/uninstall.sh
 
 ---
 
-## 22. 常见问题
+## 23. 常见问题
 
-### 22.1 `cmd: command not found`
+### 23.1 `cmd: command not found`
 
 当前 shell 临时执行：
 
@@ -1380,7 +1413,7 @@ which cmd
 
 ---
 
-### 22.2 `copilot: command not found`
+### 23.2 `copilot: command not found`
 
 说明 GitHub Copilot CLI 未安装。安装：
 
@@ -1392,7 +1425,7 @@ npm install -g @github/copilot
 
 ---
 
-### 22.3 DeepSeek 认证失败
+### 23.3 DeepSeek 认证失败
 
 检查：
 
@@ -1406,7 +1439,7 @@ test -n "$COPILOT_PROVIDER_API_KEY" && echo "DeepSeek key is set"
 
 ---
 
-### 22.4 GitHub Copilot native 报 `No authentication information found`
+### 23.4 GitHub Copilot native 报 `No authentication information found`
 
 进入 cmd 专用 native Copilot 环境：
 
@@ -1430,7 +1463,7 @@ cmd --copilot "只回答 OK"
 
 ---
 
-### 22.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
+### 23.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
 
 Copilot `/model` 菜单显示名不一定能作为 `--model` 参数使用。推荐做法：
 
@@ -1460,7 +1493,7 @@ cmd --copilot -m "GPT-5 mini" "问题"
 
 ---
 
-### 22.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
+### 23.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
 
 当前推荐使用：
 
@@ -1477,7 +1510,7 @@ cmd-chat
 
 ---
 
-## 23. 维护者说明
+## 24. 维护者说明
 
 以下说明适用于在共享服务器上维护公共部署包的管理员。公共包路径因服务器而异，以下以 `/data/public/tools/linux-cmd-helper` 为示例。
 
@@ -1528,7 +1561,7 @@ chmod 644 "$PUB/README.md"
 
 ---
 
-## 24. 最小测试流程
+## 25. 最小测试流程
 
 安装完成后，建议每个用户测试：
 
@@ -1570,7 +1603,7 @@ cmd --copilot "只回答 OK"
 
 ---
 
-## 25. 推荐日常用法总结
+## 26. 推荐日常用法总结
 
 普通问题：
 
