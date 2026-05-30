@@ -14,16 +14,26 @@ usage() {
   cmdx [上下文选项] [模型选项] -f <file>
   cmdx [上下文选项] [模型选项] -e
 
+  cmdx --loop "问题"
+  cmdx -L "问题"
+  cmdx --loop --max-rounds 10 "问题"
+
 上下文选项（默认最小上下文，省 token）：
   -c, --context       发送精简上下文（pwd/git/disk/meta）
   --last-run[=N]      精简上下文 + last-run 日志尾部（默认 200 行，可指定行数）
   --last-record[=N]   精简上下文 + last-record 日志尾部（默认 300 行，可指定行数）
   --full-context      发送完整上下文（调用 cmd-context，含目录列表、bash 历史等）
 
+Loop 模式：
+  -L, --loop          多轮审批模式：AI 分析→申请命令→用户审批→执行→AI 再分析
+  --max-rounds N      最大轮数（默认 5）
+
 说明：
   cmdx 允许 AI 提出需要运行的 shell 命令。
   命令不会自动执行，必须由用户输入 yes 确认。
   执行结果会保存到 ~/.cache/copilot-cmd/approved-runs/ 下。
+
+  默认 cmdx 是单轮审批。cmdx --loop 是多轮审批式诊断，每一轮仍需用户确认。
 
 后端：
   默认：DeepSeek Flash
@@ -53,6 +63,8 @@ CTX_MODE="minimal"
 INCLUDE_LAST_RUN=0
 INCLUDE_LAST_RECORD=0
 FULL_CONTEXT=0
+LOOP_MODE=0
+MAX_ROUNDS=5
 ARGS=()
 
 # -----------------------------
@@ -93,6 +105,30 @@ while [ "$#" -gt 0 ]; do
       ;;
     --deepseek|--ds)
       BACKEND="deepseek"
+      shift
+      ;;
+    -L|--loop)
+      LOOP_MODE=1
+      shift
+      ;;
+    --max-rounds)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing value after $1" >&2
+        exit 1
+      fi
+      if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: --max-rounds requires a positive integer, got: $2" >&2
+        exit 1
+      fi
+      MAX_ROUNDS="$2"
+      shift 2
+      ;;
+    --max-rounds=*)
+      MAX_ROUNDS="${1#--max-rounds=}"
+      if ! [[ "$MAX_ROUNDS" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: --max-rounds requires a positive integer, got: $MAX_ROUNDS" >&2
+        exit 1
+      fi
       shift
       ;;
     --copilot|--github|--native|--gh)
@@ -397,6 +433,296 @@ else
   fi
 fi
 echo "" >&2
+
+# =============================================================================
+# LOOP MODE vs SINGLE-ROUND MODE
+# =============================================================================
+
+if [ "$LOOP_MODE" -eq 1 ]; then
+  # -----------------------------------------------------------
+  # LOOP MODE: multi-round user-approved command execution
+  # -----------------------------------------------------------
+  echo "[cmdx] loop mode: max $MAX_ROUNDS rounds" >&2
+  echo "" >&2
+
+  LOOP_TS="$(date '+%Y%m%d-%H%M%S')"
+  LOOP_DIR="$BASE/approved-runs/${LOOP_TS}-loop"
+  mkdir -p "$LOOP_DIR"
+  {
+    echo "loop_start: $(date '+%F %T %Z')"
+    echo "max_rounds: $MAX_ROUNDS"
+    echo "cwd: $(pwd)"
+    echo "user: $(whoami)"
+    echo "host: $(hostname)"
+    echo "backend: $BACKEND"
+    if [ "$BACKEND" = "deepseek" ]; then
+      echo "model: ${COPILOT_MODEL:-unknown}"
+    else
+      if [ -n "${MODEL:-}" ]; then
+        echo "model: ${MODEL} (--model)"
+      else
+        echo "model: GitHub Copilot CLI current/default model"
+      fi
+    fi
+  } > "$LOOP_DIR/loop-meta.txt"
+
+  # Build initial loop prompt with loop-specific system instructions
+  LOOP_PROMPT="$TMP_DIR/loop_prompt.txt"
+  {
+    cat <<'LOOP_SYSTEM'
+你是一个谨慎的 Linux 终端命令行助手，运行环境是 Ubuntu 多用户科研服务器。
+当前处于多轮诊断模式。每一轮你只能提出"当前下一步最必要"的命令。
+
+严格规则：
+1. 每一轮只提出当前下一步最必要的命令，不要提前列出多个条件分支的未来命令。
+2. 不要一次性打包整个诊断计划。
+3. 看到执行结果后，再决定是否提出下一轮命令。
+4. 优先提出只读检查命令。
+5. 不要默认使用 sudo。
+6. 不要默认访问其他用户目录。
+7. 高风险命令（如 sudo, rm -rf, mkfs, dd, chmod -R, chown -R, iptables, ufw, docker 删除, shutdown, reboot, systemctl stop/restart/disable）不要放入 __CMDX_BEGIN__，只能说明风险和原因。
+8. 如果已经足够判断问题，应直接给最终结论，不要再申请命令。
+
+如果不需要运行命令就能回答，直接给出答案，不要输出命令执行标记。
+如果必须运行命令，在下面两个标记之间输出建议执行的 Bash 命令：
+
+__CMDX_BEGIN__
+命令
+__CMDX_END__
+
+不要用反引号或 Markdown 代码块包裹命令。只在标记之间放真正要执行的命令。
+
+LOOP_SYSTEM
+
+    # Context
+    case "$CTX_MODE" in
+      minimal)
+        append_minimal_context "$BACKEND" "${COPILOT_MODEL:-${MODEL:-}}"
+        ;;
+      compact)
+        append_compact_context
+        if [ "$INCLUDE_LAST_RUN" -eq 1 ]; then
+          append_last_run_tail
+        fi
+        if [ "$INCLUDE_LAST_RECORD" -eq 1 ]; then
+          append_last_record_tail
+        fi
+        ;;
+      full)
+        CTX_FILE="$(cmd-context)"
+        cat "$CTX_FILE"
+        ;;
+    esac
+
+    echo
+    append_model_info "$BACKEND" "${MODEL:-}" "${COPILOT_MODEL:-}"
+
+    echo
+    echo "## User question"
+    echo '```text'
+    cat "$USER_INPUT"
+    echo '```'
+  } > "$LOOP_PROMPT"
+
+  CURRENT_PROMPT="$LOOP_PROMPT"
+  LAST_RC=0
+
+  for (( ROUND=1; ROUND<=MAX_ROUNDS; ROUND++ )); do
+    echo "" >&2
+    echo "[cmdx] loop round $ROUND/$MAX_ROUNDS" >&2
+    echo "" >&2
+
+    ROUND_RESPONSE="$TMP_DIR/loop_response_${ROUND}.txt"
+    ROUND_CMD="$TMP_DIR/loop_commands_${ROUND}.sh"
+
+    # Send prompt to AI
+    if ! copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
+        "${COPILOT_EXTRA_ARGS[@]}" \
+        --deny-tool='shell(*)' \
+        --deny-tool='write' | tee "$ROUND_RESPONSE"; then
+      echo "" >&2
+      echo "[cmdx] retrying with --deny-tool=shell" >&2
+      copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
+        "${COPILOT_EXTRA_ARGS[@]}" \
+        --deny-tool='shell' \
+        --deny-tool='write' | tee "$ROUND_RESPONSE"
+    fi
+
+    # Extract commands
+    awk '
+      /^__CMDX_BEGIN__$/ {flag=1; next}
+      /^__CMDX_END__$/ {flag=0; next}
+      flag {print}
+    ' "$ROUND_RESPONSE" > "$ROUND_CMD"
+
+    # Check if AI proposed commands
+    if ! grep -v '^[[:space:]]*$' "$ROUND_CMD" | grep -v '^[[:space:]]*#' >/dev/null 2>&1; then
+      echo "" >&2
+      echo "[cmdx] no further command request; loop finished." >&2
+      break
+    fi
+
+    # Display proposed commands
+    echo
+    echo "============================================================"
+    echo "[cmdx] AI 建议执行以下命令（round $ROUND/$MAX_ROUNDS）："
+    echo "============================================================"
+    nl -ba "$ROUND_CMD"
+    echo "============================================================"
+    echo
+
+    # User approval
+    if grep -Eiq '(^|[;&|[:space:]])sudo([[:space:]]|$)|rm[[:space:]]+-rf|mkfs|dd[[:space:]]+if=|chmod[[:space:]]+-R|chown[[:space:]]+-R|iptables|ufw|docker[[:space:]]+(rm|rmi|system[[:space:]]+prune)|shutdown|reboot|systemctl[[:space:]]+(stop|restart|disable)' "$ROUND_CMD"; then
+      echo "[cmdx] WARNING: 检测到潜在高风险命令。"
+      echo "[cmdx] 如确需执行，必须输入 YES I UNDERSTAND。"
+      read -r -p "确认执行？ " ans
+      if [ "$ans" != "YES I UNDERSTAND" ]; then
+        echo "[cmdx] 已取消执行。loop 结束。"
+        break
+      fi
+    else
+      read -r -p "是否执行？输入 yes 才执行；输入 edit 可先编辑；其他输入取消: " ans
+      case "$ans" in
+        yes)
+          ;;
+        edit)
+          EDITOR_CMD="${EDITOR:-nano}"
+          "$EDITOR_CMD" "$ROUND_CMD"
+          echo
+          echo "[cmdx] 编辑后的命令："
+          nl -ba "$ROUND_CMD"
+          echo
+          read -r -p "确认执行编辑后的命令？输入 yes 才执行: " ans2
+          if [ "$ans2" != "yes" ]; then
+            echo "[cmdx] 已取消执行。loop 结束。"
+            break
+          fi
+          ;;
+        *)
+          echo "[cmdx] 已取消执行。loop 结束。"
+          break
+          ;;
+      esac
+    fi
+
+    # Execute commands and save to round directory
+    ROUND_DIR="$LOOP_DIR/$(printf 'round-%02d' "$ROUND")"
+    mkdir -p "$ROUND_DIR"
+
+    cp "$ROUND_CMD" "$ROUND_DIR/commands.sh"
+    chmod 700 "$ROUND_DIR/commands.sh"
+
+    {
+      echo "round: $ROUND"
+      echo "time_start: $(date '+%F %T %Z')"
+      echo "cwd: $(pwd)"
+      echo "user: $(whoami)"
+      echo "host: $(hostname)"
+      echo "backend: $BACKEND"
+      if [ "$BACKEND" = "deepseek" ]; then
+        echo "model: ${COPILOT_MODEL:-unknown}"
+      else
+        if [ -n "${MODEL:-}" ]; then
+          echo "model: ${MODEL} (--model)"
+        else
+          echo "model: GitHub Copilot CLI current/default model"
+        fi
+      fi
+    } > "$ROUND_DIR/meta.txt"
+
+    echo
+    echo "[cmdx] executing commands..."
+    echo "[cmdx] log: $ROUND_DIR/output.log"
+    echo
+
+    set +e
+    bash "$ROUND_DIR/commands.sh" 2>&1 | tee "$ROUND_DIR/output.log"
+    LAST_RC=${PIPESTATUS[0]}
+    set -e
+
+    {
+      echo "time_end: $(date '+%F %T %Z')"
+      echo "exit_code: $LAST_RC"
+    } >> "$ROUND_DIR/meta.txt"
+
+    echo
+    echo "[cmdx] round $ROUND exit_code=$LAST_RC"
+    echo "[cmdx] saved: $ROUND_DIR"
+
+    ln -sfn "$LOOP_DIR" "$BASE/last-approved-run"
+
+    # If we've reached max rounds, stop
+    if [ "$ROUND" -eq "$MAX_ROUNDS" ]; then
+      echo "" >&2
+      echo "[cmdx] reached max rounds; stop." >&2
+      echo "[cmdx] you can re-run cmdx --loop to continue." >&2
+      break
+    fi
+
+    # Build follow-up prompt for next round
+    CURRENT_PROMPT="$TMP_DIR/loop_followup_${ROUND}.txt"
+    {
+      cat <<'FOLLOWUP_HEADER'
+你是一个谨慎的 Linux 终端命令行助手，当前处于多轮诊断模式。
+
+用户批准并执行了你建议的命令。请根据执行结果继续分析：
+1. 先判断命令是否成功；
+2. 如果失败，指出关键错误；
+3. 判断是否已经能得出结论；
+4. 如果已经足够判断问题，直接给最终结论，不要再申请命令；
+5. 如果还需要下一步检查，提出当前下一步最必要的命令。
+
+严格规则：
+- 每一轮只提出当前下一步最必要的命令。
+- 不要提前列出多个条件分支的未来命令。
+- 不要一次性打包整个诊断计划。
+- 优先提出只读检查命令。
+- 不要默认使用 sudo。
+- 不要默认访问其他用户目录。
+- 高风险命令不要放入 __CMDX_BEGIN__，只能说明风险和原因。
+
+如果不需要再运行命令，直接给出最终结论。
+如果必须运行命令，在下面两个标记之间输出建议执行的 Bash 命令：
+
+__CMDX_BEGIN__
+命令
+__CMDX_END__
+
+不要用反引号或 Markdown 代码块包裹命令。只在标记之间放真正要执行的命令。
+
+FOLLOWUP_HEADER
+
+      echo "## Original user question"
+      echo '```text'
+      cat "$USER_INPUT"
+      echo '```'
+
+      echo
+      echo "## Executed commands (round $ROUND)"
+      echo '```bash'
+      cat "$ROUND_DIR/commands.sh"
+      echo '```'
+
+      echo
+      echo "## Execution meta"
+      echo '```text'
+      cat "$ROUND_DIR/meta.txt"
+      echo '```'
+
+      echo
+      echo "## Execution output"
+      echo '```text'
+      tail -500 "$ROUND_DIR/output.log"
+      echo '```'
+    } > "$CURRENT_PROMPT"
+  done
+
+  exit "$LAST_RC"
+fi
+
+# =============================================================================
+# SINGLE-ROUND MODE (default)
+# =============================================================================
 
 # -----------------------------
 # 4. 第一轮：让 AI 判断是否需要命令

@@ -25,6 +25,9 @@ Security:
 
 ## Unreleased
 
+### Added
+- Add `cmdx --loop` for multi-round user-approved command execution.
+
 - Prepare the project for open-source release.
 
 ## v0.1.0
