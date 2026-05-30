@@ -26,6 +26,15 @@ Security:
 ## Unreleased
 
 ### Added
+- Add lightweight terminal UI helpers (`lib/copilot-cmd-ui.sh`) for clearer command output.
+- Add spinner while waiting for model responses.
+- Add `CMD_PLAIN` and `CMD_NO_SPINNER` environment variables.
+
+### Changed
+- Improve separation between model info, question preview, AI response, command approval, and execution output.
+- `cmdx --loop` now displays clear round headers for each iteration.
+
+### Added
 - Add `cmdx --loop` for multi-round user-approved command execution.
 
 - Prepare the project for open-source release.

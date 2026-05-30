@@ -5,6 +5,8 @@ set -euo pipefail
 source "$HOME/.local/lib/copilot-cmd-env.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-context.sh"
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-ui.sh"
 
 usage() {
   cat <<'USAGE'
@@ -270,23 +272,8 @@ mkdir -p "$QUESTION_DIR"
 cp "$USER_INPUT" "$QUESTION_DIR/question.txt"
 ln -sfn "$QUESTION_DIR" "$BASE/last-question"
 
-echo "" >&2
-echo "[cmd] question saved: $QUESTION_DIR/question.txt" >&2
-echo "[cmd] question preview:" >&2
-echo "----------------------------------------" >&2
-
-QUESTION_LINES="$(wc -l < "$USER_INPUT" | tr -d ' ')"
-PREVIEW_LINES="${CMD_QUESTION_PREVIEW_LINES:-80}"
-
-if [ "$QUESTION_LINES" -le "$PREVIEW_LINES" ]; then
-  sed 's/^/[cmd] > /' "$USER_INPUT" >&2
-else
-  head -n "$PREVIEW_LINES" "$USER_INPUT" | sed 's/^/[cmd] > /' >&2
-  echo "[cmd] ... question is longer than $PREVIEW_LINES lines; full text saved." >&2
-fi
-
-echo "----------------------------------------" >&2
-echo "" >&2
+ui_info "cmd" "question saved: $QUESTION_DIR/question.txt"
+ui_question_preview "$USER_INPUT" "${CMD_QUESTION_PREVIEW_LINES:-80}"
 
 # -----------------------------
 # 2. 根据上下文模式构造 prompt
@@ -401,39 +388,54 @@ HEADER
 # -----------------------------
 # 3. 显示当前调用后端与模型
 # -----------------------------
-echo "" >&2
-echo "[cmd] context: $CTX_MODE" >&2
+_CMD_BACKEND_DISPLAY=""
+_CMD_MODEL_DISPLAY=""
+
 if [ "$BACKEND" = "deepseek" ]; then
-  echo "[cmd] backend: DeepSeek BYOK" >&2
-  echo "[cmd] model:   ${COPILOT_MODEL:-unknown}" >&2
+  _CMD_BACKEND_DISPLAY="DeepSeek BYOK"
+  _CMD_MODEL_DISPLAY="${COPILOT_MODEL:-unknown}"
 elif [ "$BACKEND" = "copilot" ]; then
-  echo "[cmd] backend: GitHub Copilot native" >&2
+  _CMD_BACKEND_DISPLAY="GitHub Copilot native"
   if [ -n "${MODEL:-}" ]; then
-    echo "[cmd] model:   ${MODEL}  (--model)" >&2
+    _CMD_MODEL_DISPLAY="${MODEL} (--model)"
   else
     NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
     if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
-      echo "[cmd] model:   $(cat "$NATIVE_MODEL_FILE")" >&2
-      echo "[cmd] note:    display label recorded by cmd-model; actual model is controlled by Copilot CLI /model" >&2
+      _CMD_MODEL_DISPLAY="$(cat "$NATIVE_MODEL_FILE")"
     else
-      echo "[cmd] model:   Copilot CLI current/default model" >&2
-      echo "[cmd] note:    run cmd-model to select and record a concrete display model" >&2
+      _CMD_MODEL_DISPLAY="Copilot CLI current/default"
     fi
   fi
 fi
-echo "" >&2
+
+ui_model_info "cmd" "$_CMD_BACKEND_DISPLAY" "$_CMD_MODEL_DISPLAY" "$CTX_MODE"
 
 # -----------------------------
 # 4. 调用 Copilot CLI
 # -----------------------------
-if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
-  "${COPILOT_EXTRA_ARGS[@]}" \
-  --deny-tool='shell(*)' \
-  --deny-tool='write'; then
-  echo "" >&2
-  echo "[cmd] retrying with --deny-tool=shell" >&2
-  copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+AI_RESPONSE_FILE="$TMP_DIR/ai_response.txt"
+
+ui_spinner_start "Waiting for model response..."
+
+_cmd_call_copilot() {
+  if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
-    --deny-tool='shell' \
-    --deny-tool='write'
-fi
+    --deny-tool='shell(*)' \
+    --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1; then
+    # Retry with alternate deny-tool syntax
+    copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+      "${COPILOT_EXTRA_ARGS[@]}" \
+      --deny-tool='shell' \
+      --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1
+  fi
+}
+
+_cmd_call_copilot
+_CMD_RC=$?
+ui_spinner_stop
+
+ui_ai_begin
+cat "$AI_RESPONSE_FILE"
+ui_ai_end
+
+exit "$_CMD_RC"
