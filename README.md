@@ -694,6 +694,73 @@ tail -200 ~/.cache/copilot-cmd/last-approved-run/output.log
 
 ---
 
+### 8.6 `cmdx --loop`：多轮审批式诊断
+
+默认 `cmdx` 是单轮审批：AI 提出命令 → 用户确认 → 执行 → 可选 follow-up 分析 → 结束。
+
+`cmdx --loop` 是多轮审批式诊断模式：
+
+```text
+AI 分析 → 申请命令 → 用户审批 → 执行 → AI 再分析 → 再申请 → 再审批 → ...
+```
+
+每一轮仍然需要用户手动确认，不是自动执行 agent。
+
+用法：
+
+```bash
+cmdx --loop "请帮我排查当前 Git 仓库的问题"
+cmdx -L "请诊断编译错误"
+cmdx --loop --max-rounds 10 "复杂问题诊断"
+cmdx --loop -m pro "使用 DeepSeek Pro 多轮诊断"
+cmdx --loop --copilot "使用 Copilot native 多轮诊断"
+```
+
+参数：
+
+| 参数              | 说明                                 |
+| --------------- | ---------------------------------- |
+| `-L` / `--loop` | 启用多轮审批模式                           |
+| `--max-rounds N`| 最大轮数（默认 5）                         |
+
+行为说明：
+
+1. AI 判断是否需要运行命令；
+2. 如果不需要，直接输出答案并结束；
+3. 如果需要，提出命令并等待用户审批；
+4. 用户输入 `yes` 执行，`edit` 编辑后确认，其他输入取消并结束；
+5. 执行后将结果回传 AI；
+6. AI 根据结果判断是否需要下一轮；
+7. 如果不需要，输出最终分析并结束；
+8. 达到最大轮数后停止。
+
+Loop 模式适合需要"运行命令 → 分析输出 → 再运行命令"的问题，例如：
+
+- 多步骤服务器排错
+- 编译依赖逐步检查
+- Git 仓库状态诊断
+- 权限问题逐层排查
+
+注意：`cmdx --loop` 不是自动执行 agent。每一轮命令都必须由用户审批后才会执行。
+
+日志结构：
+
+```text
+~/.cache/copilot-cmd/approved-runs/<timestamp>-loop/
+├── loop-meta.txt
+├── round-01/
+│   ├── commands.sh
+│   ├── meta.txt
+│   └── output.log
+├── round-02/
+│   ├── commands.sh
+│   ├── meta.txt
+│   └── output.log
+└── ...
+```
+
+---
+
 ## 9. `cmd-chat`：进入连续交互模式
 
 默认进入 DeepSeek Flash：
