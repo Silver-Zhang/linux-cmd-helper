@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -eq 0 ]; then
+  echo 'Usage: cmd-run <command> [args...]' >&2
+  exit 1
+fi
+
+BASE="$HOME/.cache/copilot-cmd"
+TS="$(date '+%Y%m%d-%H%M%S')"
+SLUG="$(printf '%s' "$1" | tr -cs '[:alnum:]_.-' '_' | sed 's/^_*//;s/_*$//' | cut -c1-40)"
+[ -n "$SLUG" ] || SLUG="command"
+
+DIR="$BASE/runs/$TS-$SLUG"
+mkdir -p "$DIR"
+
+{
+  printf '%q ' "$@"
+  echo
+} > "$DIR/command.txt"
+
+{
+  echo "time_start: $(date '+%F %T %Z')"
+  echo "cwd: $(pwd)"
+  echo "user: $(whoami)"
+  echo "host: $(hostname)"
+  echo -n "command: "
+  cat "$DIR/command.txt"
+} > "$DIR/meta.txt"
+
+echo "cmd-run: logging to $DIR/output.log"
+echo "cmd-run: command: $(cat "$DIR/command.txt")"
+echo
+
+set +e
+("$@") 2>&1 | tee "$DIR/output.log"
+RC=${PIPESTATUS[0]}
+set -e
+
+{
+  echo "time_end: $(date '+%F %T %Z')"
+  echo "exit_code: $RC"
+} >> "$DIR/meta.txt"
+
+ln -sfn "$DIR" "$BASE/last-run"
+
+echo
+echo "cmd-run: exit_code=$RC"
+echo "cmd-run: saved log: $DIR/output.log"
+
+exit "$RC"

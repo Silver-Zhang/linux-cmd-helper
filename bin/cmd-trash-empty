@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCOPE="${1:-all}"
+
+SESSION_TRASH="$HOME/.copilot-cmd-trash"
+CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"
+
+empty_dir() {
+  local dir="$1"
+  if [ -d "$dir" ]; then
+    find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    echo "Emptied: $dir"
+  else
+    echo "Not found: $dir"
+  fi
+}
+
+echo "This will permanently delete trash contents for scope: $SCOPE"
+echo "Input yes to continue."
+read -r -p "Confirm: " ans
+
+if [ "$ans" != "yes" ]; then
+  echo "Cancelled."
+  exit 0
+fi
+
+case "$SCOPE" in
+  sessions)
+    empty_dir "$SESSION_TRASH"
+    ;;
+  cache)
+    empty_dir "$CACHE_TRASH"
+    ;;
+  all)
+    empty_dir "$SESSION_TRASH"
+    empty_dir "$CACHE_TRASH"
+    ;;
+  *)
+    echo "Usage: cmd-trash-empty [sessions|cache|all]" >&2
+    exit 1
+    ;;
+esac

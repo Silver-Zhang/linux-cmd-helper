@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL_DIR="$HOME/.config/copilot-cmd"
+MODEL_FILE="$MODEL_DIR/copilot-models"
+CURRENT_FILE="$MODEL_DIR/current-native-model"
+
+mkdir -p "$MODEL_DIR"
+
+if [ ! -f "$MODEL_FILE" ]; then
+  cat > "$MODEL_FILE" <<'MODELS'
+Auto
+Claude Sonnet 4.6
+Claude Sonnet 4.5
+Claude Haiku 4.5
+Claude Opus 4.8
+Claude Opus 4.7
+Claude Opus 4.6
+Claude Opus 4.5
+GPT-5.5
+GPT-5.4
+GPT-5.3-Codex
+GPT-5.2-Codex
+GPT-5.2
+GPT-5.4 mini
+GPT-5 mini
+GPT-4.1
+MODELS
+fi
+
+export COPILOT_HOME="$HOME/.copilot-cmd"
+
+unset COPILOT_PROVIDER_TYPE
+unset COPILOT_PROVIDER_BASE_URL
+unset COPILOT_PROVIDER_API_KEY
+unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+unset COPILOT_MODEL
+
+cat <<'MSG'
+即将进入 GitHub Copilot CLI 原生界面。
+
+进入后请输入：
+  /model
+
+然后用 Copilot 自带菜单选择模型。
+
+选择完成后输入：
+  /exit
+
+退出后，脚本会让你同步保存一个“显示用模型名”。
+MSG
+
+copilot || true
+
+echo
+echo "请同步记录你刚才在 Copilot /model 中选择的模型："
+echo
+
+mapfile -t MODELS < <(grep -v '^[[:space:]]*$' "$MODEL_FILE" | grep -v '^[[:space:]]*#')
+
+i=1
+for m in "${MODELS[@]}"; do
+  printf '  %d) %s\n' "$i" "$m"
+  i=$((i + 1))
+done
+printf '  %d) 手动输入模型名\n' "$i"
+printf '  0) 不更新\n'
+
+echo
+read -r -p "输入编号: " choice
+
+if [ -z "$choice" ] || [ "$choice" = "0" ]; then
+  echo "未更新显示模型名。"
+  if [ -f "$CURRENT_FILE" ]; then
+    echo "当前记录: $(cat "$CURRENT_FILE")"
+  else
+    echo "当前记录: 未设置"
+  fi
+  exit 0
+fi
+
+if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODELS[@]}" ]; then
+  SELECTED="${MODELS[$((choice - 1))]}"
+elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -eq "$i" ]; then
+  read -r -p "请输入模型显示名: " SELECTED
+  if [ -z "$SELECTED" ]; then
+    echo "Error: empty model name." >&2
+    exit 1
+  fi
+else
+  echo "Error: invalid selection." >&2
+  exit 1
+fi
+
+printf '%s\n' "$SELECTED" > "$CURRENT_FILE"
+chmod 600 "$CURRENT_FILE"
+
+echo "已记录 GitHub Copilot native 显示模型: $SELECTED"
+echo "之后运行："
+echo "  cmd --copilot \"问题\""
+echo "会显示该模型名。"

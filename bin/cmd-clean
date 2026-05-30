@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCOPE="${1:-sessions}"
+STAMP="$(date '+%Y%m%d-%H%M%S')"
+
+move_dir() {
+  local src="$1"
+  local trash="$2"
+  local prefix="$3"
+
+  if [ ! -d "$src" ]; then
+    echo "No directory to clean: $src"
+    return 0
+  fi
+
+  mkdir -p "$trash"
+  local target="$trash/$prefix-$STAMP"
+
+  echo "Moving:"
+  echo "  $src"
+  echo "to:"
+  echo "  $target"
+  echo
+
+  mv "$src" "$target"
+}
+
+clean_sessions() {
+  local home="$HOME/.copilot-cmd"
+  local trash="$HOME/.copilot-cmd-trash"
+
+  mkdir -p "$home" "$trash"
+
+  # 只清理 session-state，不移动整个 ~/.copilot-cmd，
+  # 避免删除 GitHub Copilot native 登录认证信息。
+  move_dir "$home/session-state" "$trash" "session-state"
+
+  # 重新创建空 session-state
+  mkdir -p "$home/session-state"
+
+  echo "cmd-clean sessions: done."
+  echo "Note: ~/.copilot-cmd itself was preserved to avoid clearing authentication."
+}
+
+clean_cache() {
+  move_dir "$HOME/.cache/copilot-cmd" "$HOME/.cache/copilot-cmd-trash" "copilot-cmd-cache"
+  mkdir -p "$HOME/.cache/copilot-cmd"
+}
+
+case "$SCOPE" in
+  sessions)
+    clean_sessions
+    ;;
+  cache)
+    clean_cache
+    ;;
+  all)
+    clean_sessions
+    clean_cache
+    ;;
+  *)
+    echo "Usage: cmd-clean [sessions|cache|all]" >&2
+    exit 1
+    ;;
+esac
+
+echo "cmd-clean: done. Data moved to trash, not permanently deleted."

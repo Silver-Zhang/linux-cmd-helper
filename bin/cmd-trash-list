@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SESSION_TRASH="$HOME/.copilot-cmd-trash"
+CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"
+
+echo "Session trash:"
+if [ -d "$SESSION_TRASH" ]; then
+  du -sh "$SESSION_TRASH"/* 2>/dev/null || echo "  empty"
+else
+  echo "  not found"
+fi
+
+echo
+echo "Cache trash:"
+if [ -d "$CACHE_TRASH" ]; then
+  du -sh "$CACHE_TRASH"/* 2>/dev/null || echo "  empty"
+else
+  echo "  not found"
+fi

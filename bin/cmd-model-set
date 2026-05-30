@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL_DIR="$HOME/.config/copilot-cmd"
+CURRENT_FILE="$MODEL_DIR/current-native-model"
+
+mkdir -p "$MODEL_DIR"
+
+if [ "$#" -eq 0 ]; then
+  echo '用法: cmd-model-set "模型显示名"'
+  echo '示例: cmd-model-set "GPT-5 mini"'
+  exit 1
+fi
+
+printf '%s\n' "$*" > "$CURRENT_FILE"
+chmod 600 "$CURRENT_FILE"
+
+echo "已记录 GitHub Copilot native 显示模型: $*"

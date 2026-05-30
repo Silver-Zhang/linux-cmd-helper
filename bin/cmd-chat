@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+usage() {
+  cat <<'USAGE'
+用法：
+  cmd-chat
+  cmd-chat -m flash
+  cmd-chat -m pro
+  cmd-chat --deepseek -m pro
+  cmd-chat --copilot
+  cmd-chat --copilot -m <Copilot内部模型ID>
+
+说明：
+  cmd-chat 会进入 cmd 专用 Copilot CLI 交互界面。
+  默认使用 DeepSeek Flash。
+  -m pro 使用 DeepSeek Pro。
+  --copilot 使用 GitHub Copilot native 当前/default 模型。
+
+常用：
+  cmd-chat
+  cmd-chat -m pro
+  cmd-chat --copilot
+
+注意：
+  Copilot /model 菜单中的显示名不一定能作为 --model 参数使用。
+  如需切换 Copilot native 模型，推荐先运行：
+    cmd-model
+  在 Copilot 自带 /model 菜单中选择模型后，再运行：
+    cmd-chat --copilot
+USAGE
+}
+
+BACKEND="deepseek"
+MODEL="flash"
+COPILOT_EXTRA_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deepseek|--ds)
+      BACKEND="deepseek"
+      shift
+      ;;
+    --copilot|--github|--native|--gh)
+      BACKEND="copilot"
+      MODEL=""
+      shift
+      ;;
+    -m|--model)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing model after $1" >&2
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#--model=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$BACKEND" = "deepseek" ]; then
+  export COPILOT_PROVIDER_TYPE='anthropic'
+  export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+  export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+  export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+
+  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
+    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
+    exit 1
+  fi
+
+  case "$MODEL" in
+    ""|flash)
+      export COPILOT_MODEL='deepseek-v4-flash'
+      ;;
+    pro)
+      export COPILOT_MODEL='deepseek-v4-pro'
+      ;;
+    *)
+      export COPILOT_MODEL="$MODEL"
+      ;;
+  esac
+
+elif [ "$BACKEND" = "copilot" ]; then
+  unset COPILOT_PROVIDER_TYPE
+  unset COPILOT_PROVIDER_BASE_URL
+  unset COPILOT_PROVIDER_API_KEY
+  unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+  unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+  unset COPILOT_MODEL
+
+  if [ -n "${MODEL:-}" ]; then
+    COPILOT_EXTRA_ARGS+=(--model "$MODEL")
+  fi
+
+else
+  echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+echo "" >&2
+if [ "$BACKEND" = "deepseek" ]; then
+  echo "[cmd-chat] backend: DeepSeek BYOK" >&2
+  echo "[cmd-chat] model:   ${COPILOT_MODEL:-unknown}" >&2
+else
+  echo "[cmd-chat] backend: GitHub Copilot native" >&2
+  if [ -n "${MODEL:-}" ]; then
+    echo "[cmd-chat] model:   ${MODEL}  (--model)" >&2
+  else
+    NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
+    if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
+      echo "[cmd-chat] model:   $(cat "$NATIVE_MODEL_FILE")" >&2
+      echo "[cmd-chat] note:    display label recorded by cmd-model; actual model is controlled by Copilot CLI /model" >&2
+    else
+      echo "[cmd-chat] model:   GitHub Copilot CLI current/default model" >&2
+      echo "[cmd-chat] note:    run cmd-model to select and record a concrete display model" >&2
+    fi
+  fi
+fi
+echo "" >&2
+
+# 优先进入同一个 cmd 专用 session。
+# 如果没有可 continue 的 session，则进入新的 Copilot CLI 交互界面。
+if copilot --continue "${COPILOT_EXTRA_ARGS[@]}"; then
+  exit 0
+fi
+
+echo "[cmd-chat] no existing cmd session found; starting a new chat." >&2
+exec copilot "${COPILOT_EXTRA_ARGS[@]}"

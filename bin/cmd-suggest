@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+BASE="$HOME/.cache/copilot-cmd"
+SUG_DIR="$BASE/suggestions"
+mkdir -p "$SUG_DIR"
+
+CTX="$(cmd-context)"
+OUT="$SUG_DIR/latest.txt"
+PREV="$SUG_DIR/previous.txt"
+
+: > "$PREV"
+
+generate_suggestions() {
+  local prompt_file
+  prompt_file="$(mktemp)"
+  trap 'rm -f "$prompt_file"' RETURN
+
+  {
+    cat <<'HEADER'
+你是一个 Linux 终端排错问题推荐器。
+
+请根据下面的上下文，推荐 5 个用户最可能应该继续问 AI 的问题。
+
+严格输出格式：
+[1] 问题一
+[2] 问题二
+[3] 问题三
+[4] 问题四
+[5] 问题五
+
+要求：
+1. 不要输出 Markdown。
+2. 不要解释。
+3. 不要输出额外内容。
+4. 问题要具体、可操作，适合继续发送给 Linux 命令行排错助手。
+5. 优先围绕最近 cmd-run / cmd-record / 当前目录 / Git 状态 / 报错日志推荐。
+6. 如果上下文中没有明显错误，也要推荐“下一步可以检查什么”的问题。
+
+HEADER
+
+    if [ -s "$PREV" ]; then
+      echo "下面是上一批已经推荐过的问题，请尽量不要重复："
+      echo
+      cat "$PREV"
+      echo
+    fi
+
+    echo "上下文如下："
+    echo
+    cat "$CTX"
+  } > "$prompt_file"
+
+  echo "" >&2
+  echo "[cmd-suggest] backend: DeepSeek BYOK" >&2
+  echo "[cmd-suggest] model:   ${COPILOT_MODEL:-unknown}" >&2
+  echo "" >&2
+
+  # 生成问题。这里禁止 shell/write 工具，cmd-suggest 只需要纯文本推荐。
+  if ! copilot -p "$(cat "$prompt_file")" \
+      --deny-tool='shell(*)' \
+      --deny-tool='write' | tee "$OUT"; then
+    echo "" >&2
+    echo "[cmd-suggest] first attempt failed; retrying with --deny-tool=shell" >&2
+    copilot -p "$(cat "$prompt_file")" \
+      --deny-tool='shell' \
+      --deny-tool='write' | tee "$OUT"
+  fi
+
+  {
+    cat "$PREV" 2>/dev/null || true
+    echo
+    cat "$OUT" 2>/dev/null || true
+  } > "$PREV.tmp"
+
+  mv "$PREV.tmp" "$PREV"
+}
+
+while true; do
+  generate_suggestions
+
+  echo
+  echo "操作："
+  echo "  1-5  发送对应问题到当前 cmd session"
+  echo "  r    换一批问题"
+  echo "  q    退出"
+  echo "  回车 退出"
+  echo
+
+  read -r -p "请选择: " ans
+
+  case "$ans" in
+    "")
+      exit 0
+      ;;
+    q|Q|quit|exit)
+      exit 0
+      ;;
+    r|R|n|N|next|换|换一批)
+      echo
+      echo "正在生成另一批问题..."
+      echo
+      continue
+      ;;
+    1|2|3|4|5)
+      QUESTION="$(sed -n "s/^\[$ans\][[:space:]]*//p" "$OUT" | head -n 1)"
+      if [ -z "$QUESTION" ]; then
+        echo "No question found for [$ans]." >&2
+        exit 1
+      fi
+
+      echo
+      echo "Sending to cmd session:"
+      echo "$QUESTION"
+      echo
+
+      exec cmd "$QUESTION"
+      ;;
+    *)
+      echo "无效输入：$ans" >&2
+      echo "请输入 1-5、r、q，或直接回车退出。" >&2
+      ;;
+  esac
+done

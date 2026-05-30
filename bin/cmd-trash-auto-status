@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
+MARK_END="# END COPILOT-CMD-TRASH-AUTO"
+
+if crontab -l 2>/dev/null | sed -n "/$MARK_BEGIN/,/$MARK_END/p" | grep -q "$MARK_BEGIN"; then
+  echo "cmd trash auto prune is enabled:"
+  crontab -l 2>/dev/null | sed -n "/$MARK_BEGIN/,/$MARK_END/p"
+else
+  echo "cmd trash auto prune is disabled."
+fi

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v script >/dev/null 2>&1; then
+  echo "Error: 'script' command not found. Please install util-linux." >&2
+  exit 1
+fi
+
+BASE="$HOME/.cache/copilot-cmd"
+TS="$(date '+%Y%m%d-%H%M%S')"
+DIR="$BASE/records/$TS-record"
+mkdir -p "$DIR"
+
+{
+  echo "time_start: $(date '+%F %T %Z')"
+  echo "cwd: $(pwd)"
+  echo "user: $(whoami)"
+  echo "host: $(hostname)"
+  echo "shell: ${SHELL:-/bin/bash}"
+} > "$DIR/meta.txt"
+
+ln -sfn "$DIR" "$BASE/last-record"
+
+echo "cmd-record: recording shell session."
+echo "cmd-record: log file: $DIR/output.log"
+echo "cmd-record: type 'exit' to stop recording."
+echo
+
+set +e
+script -q -f "$DIR/output.log" -c "${SHELL:-/bin/bash} -i"
+RC=$?
+set -e
+
+{
+  echo "time_end: $(date '+%F %T %Z')"
+  echo "exit_code: $RC"
+} >> "$DIR/meta.txt"
+
+echo
+echo "cmd-record: stopped."
+echo "cmd-record: saved log: $DIR/output.log"
+
+exit "$RC"

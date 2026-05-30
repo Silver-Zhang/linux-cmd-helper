@@ -1,0 +1,34 @@
+# Secrets and credentials
+.env
+*.env
+*.key
+*.pem
+*.token
+secrets/
+credentials/
+
+# User runtime data
+.copilot-cmd/
+.copilot-cmd-trash/
+.cache/
+cache/
+logs/
+*.log
+*.tmp
+
+# Local user configs
+.config/
+copilot-deepseek.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build / test artifacts
+tmp/
+dist/
+build/

@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/.cache/copilot-cmd"
+TS="$(date '+%Y%m%d-%H%M%S')"
+DIR="$BASE/contexts/$TS"
+CTX="$DIR/context.md"
+
+mkdir -p "$DIR"
+
+{
+  echo "# Terminal Context Snapshot"
+  echo
+  echo "Generated at: $(date '+%F %T %Z')"
+  echo
+
+  echo "## Basic"
+  echo '```text'
+  echo "user:  $(whoami)"
+  echo "host:  $(hostname)"
+  echo "pwd:   $(pwd)"
+  echo "shell: ${SHELL:-unknown}"
+  echo '```'
+  echo
+
+  echo "## Directory Listing"
+  echo '```text'
+  ls -la 2>/dev/null | head -120 || true
+  echo '```'
+  echo
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "## Git Status"
+    echo '```text'
+    git status --short --branch 2>/dev/null || true
+    echo '```'
+    echo
+
+    echo "## Git Remote"
+    echo '```text'
+    git remote -v 2>/dev/null || true
+    echo '```'
+    echo
+  fi
+
+  echo "## Disk Usage"
+  echo '```text'
+  df -h . 2>/dev/null || true
+  echo
+  du -sh . 2>/dev/null || true
+  echo '```'
+  echo
+
+  echo "## Recent Bash History"
+  echo '```text'
+  if [ -f "$HOME/.bash_history" ]; then
+    tail -50 "$HOME/.bash_history" 2>/dev/null || true
+  else
+    echo "No ~/.bash_history found."
+  fi
+  echo '```'
+  echo
+
+  if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
+    RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+    if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
+      echo "## Latest cmd-run"
+      echo "path: $RUN_DIR"
+      echo
+      if [ -f "$RUN_DIR/meta.txt" ]; then
+        echo "### meta.txt"
+        echo '```text'
+        cat "$RUN_DIR/meta.txt" 2>/dev/null || true
+        echo '```'
+        echo
+      fi
+      if [ -f "$RUN_DIR/output.log" ]; then
+        echo "### tail of output.log"
+        echo '```text'
+        tail -120 "$RUN_DIR/output.log" 2>/dev/null || true
+        echo '```'
+        echo
+      fi
+    fi
+  fi
+
+  if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
+    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+    if [ -n "$REC_DIR" ] && [ -d "$REC_DIR" ]; then
+      echo "## Latest cmd-record"
+      echo "path: $REC_DIR"
+      echo
+      if [ -f "$REC_DIR/meta.txt" ]; then
+        echo "### meta.txt"
+        echo '```text'
+        cat "$REC_DIR/meta.txt" 2>/dev/null || true
+        echo '```'
+        echo
+      fi
+      if [ -f "$REC_DIR/output.log" ]; then
+        echo "### tail of output.log"
+        echo '```text'
+        tail -200 "$REC_DIR/output.log" 2>/dev/null || true
+        echo '```'
+        echo
+      fi
+    fi
+  fi
+} > "$CTX"
+
+ln -sfn "$DIR" "$BASE/latest-context"
+
+echo "$CTX"

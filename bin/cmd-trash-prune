@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DAYS="${1:-30}"
+SCOPE="${2:-all}"
+
+if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+  echo "Usage: cmd-trash-prune [days] [sessions|cache|all]" >&2
+  exit 1
+fi
+
+SESSION_TRASH="$HOME/.copilot-cmd-trash"
+CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"
+
+prune_dir() {
+  local dir="$1"
+  local days="$2"
+
+  if [ ! -d "$dir" ]; then
+    echo "Not found: $dir"
+    return 0
+  fi
+
+  echo "Pruning entries older than $days days in: $dir"
+  find "$dir" -mindepth 1 -maxdepth 1 -mtime +"$days" -print -exec rm -rf -- {} +
+}
+
+case "$SCOPE" in
+  sessions)
+    prune_dir "$SESSION_TRASH" "$DAYS"
+    ;;
+  cache)
+    prune_dir "$CACHE_TRASH" "$DAYS"
+    ;;
+  all)
+    prune_dir "$SESSION_TRASH" "$DAYS"
+    prune_dir "$CACHE_TRASH" "$DAYS"
+    ;;
+  *)
+    echo "Usage: cmd-trash-prune [days] [sessions|cache|all]" >&2
+    exit 1
+    ;;
+esac

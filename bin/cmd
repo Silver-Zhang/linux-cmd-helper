@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+usage() {
+  cat <<'USAGE'
+用法：
+  cmd [模型选项] "短问题"
+  cmd [模型选项] -
+  cmd [模型选项] <<'EOF'
+多行问题或日志
+EOF
+  cmd [模型选项] -f <file>
+  cmd [模型选项] -e
+
+模型选项：
+  默认：
+    cmd "问题"
+      使用 DeepSeek Flash
+
+  DeepSeek：
+    cmd -m flash "问题"
+    cmd -m pro "问题"
+    cmd --deepseek -m deepseek-v4-pro "问题"
+    cmd --deepseek -m deepseek-v4-flash "问题"
+
+  GitHub Copilot 原生模型：
+    cmd --copilot "问题"
+      使用 GitHub Copilot CLI 默认模型
+
+    cmd --copilot -m <模型ID> "问题"
+      使用 GitHub Copilot CLI 指定模型
+
+示例：
+  cmd "帮我解释这条命令"
+  cmd -m pro "请深入分析最近 cmd-record 的编译错误"
+  cmd --copilot "用 Copilot 默认模型回答"
+  cmd --copilot -m claude-sonnet-4.5 "用指定 Copilot 模型回答"
+  cmd --copilot -m claude-opus-4.5 "用指定 Copilot 模型回答"
+
+输入方式：
+  cmd "..."       短问题
+  cmd -           从标准输入读取，结束时按 Ctrl+D
+  cmd -f file     从文件读取
+  cmd -e          用编辑器写长问题，默认使用 nano 或 $EDITOR
+USAGE
+}
+
+BASE="$HOME/.cache/copilot-cmd"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+USER_INPUT="$TMP_DIR/user_input.txt"
+PROMPT_FILE="$TMP_DIR/prompt.txt"
+
+# -----------------------------
+# 0. 解析模型和后端选项
+# -----------------------------
+BACKEND="deepseek"
+MODEL="flash"
+
+ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deepseek|--ds)
+      BACKEND="deepseek"
+      shift
+      ;;
+    --copilot|--github|--native|--gh)
+      BACKEND="copilot"
+      MODEL=""
+      shift
+      ;;
+    -m|--model)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing model after $1" >&2
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#--model=}"
+      shift
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        ARGS+=("$1")
+        shift
+      done
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# 恢复位置参数为非模型选项部分
+set -- "${ARGS[@]}"
+
+# -----------------------------
+# 0.1 根据后端设置环境
+# -----------------------------
+COPILOT_EXTRA_ARGS=()
+
+if [ "$BACKEND" = "deepseek" ]; then
+  export COPILOT_PROVIDER_TYPE='anthropic'
+  export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+  export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+  export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+
+  # COPILOT_PROVIDER_API_KEY 来自 ~/.config/copilot-deepseek/env
+  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
+    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
+    exit 1
+  fi
+
+  case "$MODEL" in
+    ""|flash)
+      export COPILOT_MODEL='deepseek-v4-flash'
+      ;;
+    pro)
+      export COPILOT_MODEL='deepseek-v4-pro'
+      ;;
+    *)
+      export COPILOT_MODEL="$MODEL"
+      ;;
+  esac
+
+elif [ "$BACKEND" = "copilot" ]; then
+  # 使用 GitHub Copilot 原生模型时，必须取消 BYOK provider 变量。
+  # 注意：这里默认不传 --model，使用 Copilot CLI 当前默认模型或 Auto。
+  # 如需切换模型，请运行 cmd-model 进入 Copilot CLI 自带 /model 菜单。
+  unset COPILOT_PROVIDER_TYPE
+  unset COPILOT_PROVIDER_BASE_URL
+  unset COPILOT_PROVIDER_API_KEY
+  unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+  unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+  unset COPILOT_MODEL
+
+  # 只有用户显式 -m/--model 时才传递 --model。
+  # 这里要求用户提供 Copilot CLI 真正接受的内部模型 ID；
+  # /model 界面里的显示名不一定能作为 --model 参数使用。
+  if [ -n "${MODEL:-}" ]; then
+    COPILOT_EXTRA_ARGS+=(--model "$MODEL")
+  fi
+
+else
+  echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+# -----------------------------
+# 1. 读取用户问题
+# -----------------------------
+if [ "$#" -eq 0 ]; then
+  if [ -t 0 ]; then
+    usage
+    exit 0
+  else
+    cat > "$USER_INPUT"
+  fi
+else
+  case "$1" in
+    -|--stdin)
+      cat > "$USER_INPUT"
+      ;;
+    -f|--file)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing file path after $1" >&2
+        exit 1
+      fi
+      if [ ! -f "$2" ]; then
+        echo "Error: file not found: $2" >&2
+        exit 1
+      fi
+      cat "$2" > "$USER_INPUT"
+      ;;
+    -e|--edit|--editor)
+      EDITOR_CMD="${EDITOR:-nano}"
+      "$EDITOR_CMD" "$USER_INPUT"
+      ;;
+    *)
+      printf '%s\n' "$*" > "$USER_INPUT"
+      ;;
+  esac
+fi
+
+if [ ! -s "$USER_INPUT" ]; then
+  echo "Error: empty question." >&2
+  exit 1
+fi
+
+# 防止超长输入超过 shell 参数长度
+MAX_BYTES=120000
+INPUT_BYTES="$(wc -c < "$USER_INPUT" | tr -d ' ')"
+
+if [ "$INPUT_BYTES" -gt "$MAX_BYTES" ]; then
+  TRIMMED="$TMP_DIR/user_input_trimmed.txt"
+  head -c "$MAX_BYTES" "$USER_INPUT" > "$TRIMMED"
+  {
+    echo
+    echo "[NOTE] 用户输入原始长度为 ${INPUT_BYTES} bytes，已截断为前 ${MAX_BYTES} bytes。"
+    echo "如需完整分析，请把日志保存为文件，并使用 cmd-run 或 cmd-record 方式保留上下文。"
+  } >> "$TRIMMED"
+  mv "$TRIMMED" "$USER_INPUT"
+fi
+
+# -----------------------------
+# 1.5 保存并回显用户问题
+# -----------------------------
+QUESTION_TS="$(date '+%Y%m%d-%H%M%S')"
+QUESTION_DIR="$BASE/questions/$QUESTION_TS"
+mkdir -p "$QUESTION_DIR"
+
+cp "$USER_INPUT" "$QUESTION_DIR/question.txt"
+ln -sfn "$QUESTION_DIR" "$BASE/last-question"
+
+echo "" >&2
+echo "[cmd] question saved: $QUESTION_DIR/question.txt" >&2
+echo "[cmd] question preview:" >&2
+echo "----------------------------------------" >&2
+
+QUESTION_LINES="$(wc -l < "$USER_INPUT" | tr -d ' ')"
+PREVIEW_LINES="${CMD_QUESTION_PREVIEW_LINES:-80}"
+
+if [ "$QUESTION_LINES" -le "$PREVIEW_LINES" ]; then
+  sed 's/^/[cmd] > /' "$USER_INPUT" >&2
+else
+  head -n "$PREVIEW_LINES" "$USER_INPUT" | sed 's/^/[cmd] > /' >&2
+  echo "[cmd] ... question is longer than $PREVIEW_LINES lines; full text saved." >&2
+fi
+
+echo "----------------------------------------" >&2
+echo "" >&2
+
+# -----------------------------
+# 2. 重新生成当前上下文
+# -----------------------------
+CTX="$(cmd-context)"
+
+# -----------------------------
+# 3. 组装 prompt
+# -----------------------------
+{
+  cat <<'HEADER'
+你是一个谨慎的 Linux 终端命令行助手，运行环境是 Ubuntu 多用户科研服务器。
+
+严格规则：
+1. 你只能根据本文中提供的上下文、日志和用户问题进行分析。
+2. 不要尝试调用 shell、sql、glob、workspace search、文件搜索等工具。
+3. 不要试图自己读取文件系统。
+4. 如果上下文不够，直接告诉用户需要补充什么信息。
+5. 如果需要用户执行命令，优先给只读检查命令。
+6. 不要默认使用 sudo。
+7. 不要默认访问其他用户目录。
+8. 如果涉及 rm、mv 覆盖、chmod、chown、dd、mkfs、systemctl、iptables、ufw、docker 删除、全局 npm/pip/conda 修改等高风险操作，必须先说明风险。
+9. 回答应简洁、直接、可操作。
+10. 如果用户贴了长日志，优先找“第一个关键错误”，不要只看最后一行。
+
+下面是当前终端上下文：
+
+HEADER
+
+  if [ -f "$CTX" ]; then
+    cat "$CTX"
+  else
+    echo "No context file found."
+  fi
+
+  echo
+  echo "## Latest cmd-run"
+  if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
+    RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+    echo "last-run: ${RUN_DIR:-none}"
+    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
+      echo
+      echo "### last-run/meta.txt"
+      echo '```text'
+      cat "$RUN_DIR/meta.txt" 2>/dev/null || true
+      echo '```'
+    fi
+    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/output.log" ]; then
+      echo
+      echo "### last-run/output.log tail"
+      echo '```text'
+      tail -200 "$RUN_DIR/output.log" 2>/dev/null || true
+      echo '```'
+    fi
+  else
+    echo "last-run: none"
+  fi
+
+  echo
+  echo "## Latest cmd-record"
+  if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
+    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+    echo "last-record: ${REC_DIR:-none}"
+    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
+      echo
+      echo "### last-record/meta.txt"
+      echo '```text'
+      cat "$REC_DIR/meta.txt" 2>/dev/null || true
+      echo '```'
+    fi
+    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
+      echo
+      echo "### last-record/output.log tail"
+      echo '```text'
+      tail -300 "$REC_DIR/output.log" 2>/dev/null || true
+      echo '```'
+    fi
+  else
+    echo "last-record: none"
+  fi
+
+  echo
+  echo "## Model backend"
+  echo '```text'
+  echo "backend: $BACKEND"
+  if [ "$BACKEND" = "deepseek" ]; then
+    echo "model: ${COPILOT_MODEL:-unknown}"
+  else
+    if [ -n "${MODEL:-}" ]; then
+      echo "model: ${MODEL} (--model)"
+    else
+      NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
+      if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
+        echo "model: $(cat "$NATIVE_MODEL_FILE")"
+        echo "note: display label recorded by cmd-model; actual model is controlled by Copilot CLI /model"
+      else
+        echo "model: GitHub Copilot CLI current/default model"
+      fi
+    fi
+  fi
+  echo '```'
+
+  echo
+  echo "## User question"
+  echo '```text'
+  cat "$USER_INPUT"
+  echo '```'
+} > "$PROMPT_FILE"
+
+# -----------------------------
+# 4. 显示当前调用后端与模型
+# -----------------------------
+echo "" >&2
+if [ "$BACKEND" = "deepseek" ]; then
+  echo "[cmd] backend: DeepSeek BYOK" >&2
+  echo "[cmd] model:   ${COPILOT_MODEL:-unknown}" >&2
+elif [ "$BACKEND" = "copilot" ]; then
+  echo "[cmd] backend: GitHub Copilot native" >&2
+  if [ -n "${MODEL:-}" ]; then
+    echo "[cmd] model:   ${MODEL}  (--model)" >&2
+  else
+    NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
+    if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
+      echo "[cmd] model:   $(cat "$NATIVE_MODEL_FILE")" >&2
+      echo "[cmd] note:    display label recorded by cmd-model; actual model is controlled by Copilot CLI /model" >&2
+    else
+      echo "[cmd] model:   Copilot CLI current/default model" >&2
+      echo "[cmd] note:    run cmd-model to select and record a concrete display model" >&2
+    fi
+  fi
+fi
+echo "" >&2
+
+# -----------------------------
+# 5. 调用 Copilot CLI
+# -----------------------------
+if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+  "${COPILOT_EXTRA_ARGS[@]}" \
+  --deny-tool='shell(*)' \
+  --deny-tool='write'; then
+  echo "" >&2
+  echo "[cmd] retrying with --deny-tool=shell" >&2
+  copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+    "${COPILOT_EXTRA_ARGS[@]}" \
+    --deny-tool='shell' \
+    --deny-tool='write'
+fi

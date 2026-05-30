@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DAYS="${1:-30}"
+
+if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+  echo "Usage: cmd-trash-auto-on [days]" >&2
+  exit 1
+fi
+
+CMD="$HOME/.local/bin/cmd-trash-prune $DAYS all >/dev/null 2>&1"
+MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
+MARK_END="# END COPILOT-CMD-TRASH-AUTO"
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+crontab -l 2>/dev/null | sed "/$MARK_BEGIN/,/$MARK_END/d" > "$TMP" || true
+
+{
+  cat "$TMP"
+  echo "$MARK_BEGIN"
+  echo "30 3 * * * $CMD"
+  echo "$MARK_END"
+} | crontab -
+
+echo "Enabled cmd trash auto prune:"
+echo "  keep days: $DAYS"
+echo "  schedule: daily at 03:30"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CURRENT_FILE="$HOME/.config/copilot-cmd/current-native-model"
+
+if [ -f "$CURRENT_FILE" ]; then
+  echo "GitHub Copilot native 显示模型: $(cat "$CURRENT_FILE")"
+else
+  echo "GitHub Copilot native 显示模型: 未设置"
+fi
+
+echo "DeepSeek 默认模型: deepseek-v4-flash"
+echo "DeepSeek Pro 模型: deepseek-v4-pro"
