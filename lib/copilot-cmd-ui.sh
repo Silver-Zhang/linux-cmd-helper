@@ -7,7 +7,7 @@
 
 # Returns 0 if stdout is a TTY (interactive terminal).
 ui_is_tty() {
-  [ -t 2 ]
+  [ -t 1 ]
 }
 
 # Returns 0 if color output is enabled.
