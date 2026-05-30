@@ -36,7 +36,7 @@
 | `cmd-trash-auto-on`     | 开启定时清理回收站                                            |
 | `cmd-trash-auto-off`    | 关闭定时清理回收站                                            |
 | `cmd-trash-auto-status` | 查看定时清理状态                                             |
-| `cmd-model`             | 进入 cmd 专用 GitHub Copilot native 环境，用于 `/login` 和 `/model` |
+| `cmd-model`             | 进入 GitHub Copilot native 登录/模型选择流程，并同步记录显示模型名         |
 | `cmd-model-set`         | 手动记录当前 Copilot native 显示模型名                           |
 | `cmd-model-current`     | 查看当前记录的模型信息                                          |
 | `cmd-question`          | 查看最近一次通过 `cmd` 或 `cmdx` 提交的问题                        |
