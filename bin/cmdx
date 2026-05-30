@@ -3,19 +3,22 @@ set -euo pipefail
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-context.sh"
 
 usage() {
   cat <<'USAGE'
 用法：
-  cmdx "问题"
-  cmdx -m flash "问题"
-  cmdx -m pro "问题"
-  cmdx --deepseek -m pro "问题"
-  cmdx --copilot "问题"
-  cmdx --copilot -m <Copilot内部模型ID> "问题"
-  cmdx -
-  cmdx -f <file>
-  cmdx -e
+  cmdx [上下文选项] [模型选项] "问题"
+  cmdx [上下文选项] [模型选项] -
+  cmdx [上下文选项] [模型选项] -f <file>
+  cmdx [上下文选项] [模型选项] -e
+
+上下文选项（默认最小上下文，省 token）：
+  -c, --context       发送精简上下文（pwd/git/disk/meta）
+  --last-run          精简上下文 + last-run 日志尾部
+  --last-record       精简上下文 + last-record 日志尾部
+  --full-context      发送完整上下文（调用 cmd-context）
 
 说明：
   cmdx 允许 AI 提出需要运行的 shell 命令。
@@ -46,6 +49,10 @@ CMD_FILE="$TMP_DIR/proposed_commands.sh"
 BACKEND="deepseek"
 MODEL="flash"
 COPILOT_EXTRA_ARGS=()
+CTX_MODE="minimal"
+INCLUDE_LAST_RUN=0
+INCLUDE_LAST_RECORD=0
+FULL_CONTEXT=0
 ARGS=()
 
 # -----------------------------
@@ -53,6 +60,25 @@ ARGS=()
 # -----------------------------
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    -c|--context)
+      CTX_MODE="compact"
+      shift
+      ;;
+    --last-run)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RUN=1
+      shift
+      ;;
+    --last-record)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RECORD=1
+      shift
+      ;;
+    --full-context)
+      CTX_MODE="full"
+      FULL_CONTEXT=1
+      shift
+      ;;
     --deepseek|--ds)
       BACKEND="deepseek"
       shift
@@ -217,13 +243,12 @@ if [ "$INPUT_BYTES" -gt "$MAX_BYTES" ]; then
   mv "$TRIMMED" "$USER_INPUT"
 fi
 
-CTX="$(cmd-context)"
-
 # -----------------------------
 # 2. 构造第一轮 prompt
 # -----------------------------
 {
-  cat <<'HEADER'
+  if [ "$CTX_MODE" = "full" ]; then
+    cat <<'HEADER'
 你是一个谨慎的 Linux 终端命令行助手，运行环境是 Ubuntu 多用户科研服务器。
 
 你可以做两类回答：
@@ -252,67 +277,82 @@ __CMDX_END__
 下面是当前上下文：
 
 HEADER
-
-  cat "$CTX"
-
-  echo
-  echo "## Latest cmd-run"
-  if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
-    RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
-    echo "last-run: ${RUN_DIR:-none}"
-    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
-      echo '```text'
-      cat "$RUN_DIR/meta.txt" 2>/dev/null || true
-      echo '```'
-    fi
-    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/output.log" ]; then
-      echo '```text'
-      tail -200 "$RUN_DIR/output.log" 2>/dev/null || true
-      echo '```'
-    fi
   else
-    echo "last-run: none"
+    cat <<'HEADER'
+你是 Linux 终端命令行助手。默认给只读检查命令；不要默认 sudo；不要访问其他用户目录；高风险操作必须提示风险；cmdx 只能在用户确认后执行命令。
+
+如果不需要运行命令就能回答，直接给出答案。
+如果必须运行命令，在下面两个标记之间输出建议执行的 Bash 命令：
+
+__CMDX_BEGIN__
+命令
+__CMDX_END__
+
+不要用反引号或 Markdown 代码块包裹命令。只在标记之间放真正要执行的命令。
+
+HEADER
   fi
 
-  echo
-  echo "## Latest cmd-record"
-  if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
-    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
-    echo "last-record: ${REC_DIR:-none}"
-    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
-      echo '```text'
-      cat "$REC_DIR/meta.txt" 2>/dev/null || true
-      echo '```'
-    fi
-    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
-      echo '```text'
-      tail -300 "$REC_DIR/output.log" 2>/dev/null || true
-      echo '```'
-    fi
-  else
-    echo "last-record: none"
-  fi
-
-  echo
-  echo "## Model backend"
-  echo '```text'
-  echo "backend: $BACKEND"
-  if [ "$BACKEND" = "deepseek" ]; then
-    echo "model: ${COPILOT_MODEL:-unknown}"
-  else
-    if [ -n "${MODEL:-}" ]; then
-      echo "model: ${MODEL} (--model)"
-    else
-      NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
-      if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
-        echo "model: $(cat "$NATIVE_MODEL_FILE")"
-        echo "note: display label recorded by cmd-model; actual model is controlled by Copilot CLI /model"
-      else
-        echo "model: GitHub Copilot CLI current/default model"
+  # Context body based on mode
+  case "$CTX_MODE" in
+    minimal)
+      append_minimal_context "$BACKEND" "${COPILOT_MODEL:-${MODEL:-}}"
+      ;;
+    compact)
+      append_compact_context
+      if [ "$INCLUDE_LAST_RUN" -eq 1 ]; then
+        append_last_run_tail
       fi
-    fi
-  fi
-  echo '```'
+      if [ "$INCLUDE_LAST_RECORD" -eq 1 ]; then
+        append_last_record_tail
+      fi
+      ;;
+    full)
+      CTX_FILE="$(cmd-context)"
+      cat "$CTX_FILE"
+
+      echo
+      echo "## Latest cmd-run"
+      if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
+        RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+        echo "last-run: ${RUN_DIR:-none}"
+        if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
+          echo '```text'
+          cat "$RUN_DIR/meta.txt" 2>/dev/null || true
+          echo '```'
+        fi
+        if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/output.log" ]; then
+          echo '```text'
+          tail -n "$CMD_LAST_RUN_TAIL" "$RUN_DIR/output.log" 2>/dev/null || true
+          echo '```'
+        fi
+      else
+        echo "last-run: none"
+      fi
+
+      echo
+      echo "## Latest cmd-record"
+      if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
+        REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+        echo "last-record: ${REC_DIR:-none}"
+        if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
+          echo '```text'
+          cat "$REC_DIR/meta.txt" 2>/dev/null || true
+          echo '```'
+        fi
+        if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
+          echo '```text'
+          tail -n "$CMD_LAST_RECORD_TAIL" "$REC_DIR/output.log" 2>/dev/null || true
+          echo '```'
+        fi
+      else
+        echo "last-record: none"
+      fi
+      ;;
+  esac
+
+  echo
+  append_model_info "$BACKEND" "${MODEL:-}" "${COPILOT_MODEL:-}"
 
   echo
   echo "## User question"
@@ -325,6 +365,7 @@ HEADER
 # 3. 显示后端和模型
 # -----------------------------
 echo "" >&2
+echo "[cmdx] context: $CTX_MODE" >&2
 if [ "$BACKEND" = "deepseek" ]; then
   echo "[cmdx] backend: DeepSeek BYOK" >&2
   echo "[cmdx] model:   ${COPILOT_MODEL:-unknown}" >&2

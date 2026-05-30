@@ -3,17 +3,25 @@ set -euo pipefail
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-context.sh"
 
 usage() {
   cat <<'USAGE'
 用法：
-  cmd [模型选项] "短问题"
-  cmd [模型选项] -
-  cmd [模型选项] <<'EOF'
+  cmd [上下文选项] [模型选项] "短问题"
+  cmd [上下文选项] [模型选项] -
+  cmd [上下文选项] [模型选项] <<'EOF'
 多行问题或日志
 EOF
-  cmd [模型选项] -f <file>
-  cmd [模型选项] -e
+  cmd [上下文选项] [模型选项] -f <file>
+  cmd [上下文选项] [模型选项] -e
+
+上下文选项（默认最小上下文，省 token）：
+  -c, --context       发送精简上下文（pwd/git/disk/meta）
+  --last-run          精简上下文 + last-run 日志尾部
+  --last-record       精简上下文 + last-record 日志尾部
+  --full-context      发送完整上下文（调用 cmd-context）
 
 模型选项：
   默认：
@@ -35,10 +43,12 @@ EOF
 
 示例：
   cmd "帮我解释这条命令"
+  cmd -c "当前目录有什么 Git 变更？"
+  cmd --last-run "分析最近 cmd-run 的输出"
+  cmd --last-record "分析最近 cmd-record 的日志"
+  cmd --full-context "请根据完整上下文分析"
   cmd -m pro "请深入分析最近 cmd-record 的编译错误"
   cmd --copilot "用 Copilot 默认模型回答"
-  cmd --copilot -m claude-sonnet-4.5 "用指定 Copilot 模型回答"
-  cmd --copilot -m claude-opus-4.5 "用指定 Copilot 模型回答"
 
 输入方式：
   cmd "..."       短问题
@@ -56,15 +66,38 @@ USER_INPUT="$TMP_DIR/user_input.txt"
 PROMPT_FILE="$TMP_DIR/prompt.txt"
 
 # -----------------------------
-# 0. 解析模型和后端选项
+# 0. 解析上下文模式和模型/后端选项
 # -----------------------------
 BACKEND="deepseek"
 MODEL="flash"
+CTX_MODE="minimal"
+INCLUDE_LAST_RUN=0
+INCLUDE_LAST_RECORD=0
+FULL_CONTEXT=0
 
 ARGS=()
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    -c|--context)
+      CTX_MODE="compact"
+      shift
+      ;;
+    --last-run)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RUN=1
+      shift
+      ;;
+    --last-record)
+      CTX_MODE="compact"
+      INCLUDE_LAST_RECORD=1
+      shift
+      ;;
+    --full-context)
+      CTX_MODE="full"
+      FULL_CONTEXT=1
+      shift
+      ;;
     --deepseek|--ds)
       BACKEND="deepseek"
       shift
@@ -244,15 +277,12 @@ echo "----------------------------------------" >&2
 echo "" >&2
 
 # -----------------------------
-# 2. 重新生成当前上下文
-# -----------------------------
-CTX="$(cmd-context)"
-
-# -----------------------------
-# 3. 组装 prompt
+# 2. 根据上下文模式构造 prompt
 # -----------------------------
 {
-  cat <<'HEADER'
+  # Policy summary (short, replaces the long rules block in non-full modes)
+  if [ "$CTX_MODE" = "full" ]; then
+    cat <<'HEADER'
 你是一个谨慎的 Linux 终端命令行助手，运行环境是 Ubuntu 多用户科研服务器。
 
 严格规则：
@@ -265,84 +295,89 @@ CTX="$(cmd-context)"
 7. 不要默认访问其他用户目录。
 8. 如果涉及 rm、mv 覆盖、chmod、chown、dd、mkfs、systemctl、iptables、ufw、docker 删除、全局 npm/pip/conda 修改等高风险操作，必须先说明风险。
 9. 回答应简洁、直接、可操作。
-10. 如果用户贴了长日志，优先找“第一个关键错误”，不要只看最后一行。
+10. 如果用户贴了长日志，优先找"第一个关键错误"，不要只看最后一行。
 
 下面是当前终端上下文：
 
 HEADER
-
-  if [ -f "$CTX" ]; then
-    cat "$CTX"
   else
-    echo "No context file found."
+    echo "## Rules"
+    append_policy_summary
+    echo
   fi
 
-  echo
-  echo "## Latest cmd-run"
-  if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
-    RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
-    echo "last-run: ${RUN_DIR:-none}"
-    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
-      echo
-      echo "### last-run/meta.txt"
-      echo '```text'
-      cat "$RUN_DIR/meta.txt" 2>/dev/null || true
-      echo '```'
-    fi
-    if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/output.log" ]; then
-      echo
-      echo "### last-run/output.log tail"
-      echo '```text'
-      tail -200 "$RUN_DIR/output.log" 2>/dev/null || true
-      echo '```'
-    fi
-  else
-    echo "last-run: none"
-  fi
-
-  echo
-  echo "## Latest cmd-record"
-  if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
-    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
-    echo "last-record: ${REC_DIR:-none}"
-    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
-      echo
-      echo "### last-record/meta.txt"
-      echo '```text'
-      cat "$REC_DIR/meta.txt" 2>/dev/null || true
-      echo '```'
-    fi
-    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
-      echo
-      echo "### last-record/output.log tail"
-      echo '```text'
-      tail -300 "$REC_DIR/output.log" 2>/dev/null || true
-      echo '```'
-    fi
-  else
-    echo "last-record: none"
-  fi
-
-  echo
-  echo "## Model backend"
-  echo '```text'
-  echo "backend: $BACKEND"
-  if [ "$BACKEND" = "deepseek" ]; then
-    echo "model: ${COPILOT_MODEL:-unknown}"
-  else
-    if [ -n "${MODEL:-}" ]; then
-      echo "model: ${MODEL} (--model)"
-    else
-      NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
-      if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
-        echo "model: $(cat "$NATIVE_MODEL_FILE")"
-        echo "note: display label recorded by cmd-model; actual model is controlled by Copilot CLI /model"
-      else
-        echo "model: GitHub Copilot CLI current/default model"
+  # Context body based on mode
+  case "$CTX_MODE" in
+    minimal)
+      append_minimal_context "$BACKEND" "${COPILOT_MODEL:-${MODEL:-}}"
+      ;;
+    compact)
+      append_compact_context
+      if [ "$INCLUDE_LAST_RUN" -eq 1 ]; then
+        append_last_run_tail
       fi
-    fi
-  fi
-  echo '```'
+      if [ "$INCLUDE_LAST_RECORD" -eq 1 ]; then
+        append_last_record_tail
+      fi
+      ;;
+    full)
+      CTX_FILE="$(cmd-context)"
+      if [ -f "$CTX_FILE" ]; then
+        cat "$CTX_FILE"
+      else
+        echo "No context file found."
+      fi
+
+      echo
+      echo "## Latest cmd-run"
+      if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
+        RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+        echo "last-run: ${RUN_DIR:-none}"
+        if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
+          echo
+          echo "### last-run/meta.txt"
+          echo '```text'
+          cat "$RUN_DIR/meta.txt" 2>/dev/null || true
+          echo '```'
+        fi
+        if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/output.log" ]; then
+          echo
+          echo "### last-run/output.log tail"
+          echo '```text'
+          tail -n "$CMD_LAST_RUN_TAIL" "$RUN_DIR/output.log" 2>/dev/null || true
+          echo '```'
+        fi
+      else
+        echo "last-run: none"
+      fi
+
+      echo
+      echo "## Latest cmd-record"
+      if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
+        REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+        echo "last-record: ${REC_DIR:-none}"
+        if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
+          echo
+          echo "### last-record/meta.txt"
+          echo '```text'
+          cat "$REC_DIR/meta.txt" 2>/dev/null || true
+          echo '```'
+        fi
+        if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
+          echo
+          echo "### last-record/output.log tail"
+          echo '```text'
+          tail -n "$CMD_LAST_RECORD_TAIL" "$REC_DIR/output.log" 2>/dev/null || true
+          echo '```'
+        fi
+      else
+        echo "last-record: none"
+      fi
+      ;;
+  esac
+
+  echo
+  append_model_info "$BACKEND" "${MODEL:-}" "${COPILOT_MODEL:-}"
 
   echo
   echo "## User question"
@@ -352,9 +387,10 @@ HEADER
 } > "$PROMPT_FILE"
 
 # -----------------------------
-# 4. 显示当前调用后端与模型
+# 3. 显示当前调用后端与模型
 # -----------------------------
 echo "" >&2
+echo "[cmd] context: $CTX_MODE" >&2
 if [ "$BACKEND" = "deepseek" ]; then
   echo "[cmd] backend: DeepSeek BYOK" >&2
   echo "[cmd] model:   ${COPILOT_MODEL:-unknown}" >&2
@@ -376,7 +412,7 @@ fi
 echo "" >&2
 
 # -----------------------------
-# 5. 调用 Copilot CLI
+# 4. 调用 Copilot CLI
 # -----------------------------
 if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
   "${COPILOT_EXTRA_ARGS[@]}" \
