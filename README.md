@@ -207,7 +207,7 @@ cmd --full-context "需要完整环境信息"   # 完整上下文
 
 ## 6. 基本使用
 
-### 8.1 默认问答：DeepSeek Flash
+### 6.1 默认问答：DeepSeek Flash
 
 ```bash
 cmd "只回答 OK"
@@ -224,7 +224,7 @@ deepseek-v4-flash
 
 ---
 
-### 8.2 使用 DeepSeek Pro
+### 6.2 使用 DeepSeek Pro
 
 ```bash
 cmd -m pro "请深入分析最近 cmd-record 的编译错误"
@@ -241,7 +241,7 @@ deepseek-v4-pro
 
 ---
 
-### 8.3 多行输入
+### 6.3 多行输入
 
 如果问题较长，不适合放在引号中：
 
@@ -268,7 +268,7 @@ compilation terminated.
 
 ---
 
-### 8.4 heredoc 输入
+### 6.4 heredoc 输入
 
 ```bash
 cmd <<'EOF'
@@ -284,7 +284,7 @@ EOF
 
 ---
 
-### 8.5 从文件输入
+### 6.5 从文件输入
 
 ```bash
 cmd -f /tmp/error.log
@@ -302,7 +302,7 @@ cmd -f /tmp/error.log
 
 ---
 
-### 7.6 使用编辑器输入
+### 6.6 使用编辑器输入
 
 ```bash
 cmd -e
@@ -351,7 +351,7 @@ cmd-chat
 
 ---
 
-### 8.1 一直使用 `cmd` 会发生什么？
+### 7.1 一直使用 `cmd` 会发生什么？
 
 如果你一直使用：
 
@@ -378,7 +378,7 @@ cmd "问题4"
 
 ---
 
-### 8.2 什么时候应该使用 `cmd-new`？
+### 7.2 什么时候应该使用 `cmd-new`？
 
 当你要切换到一个新的、无关的任务时，建议使用：
 
@@ -402,7 +402,7 @@ cmd-new "现在开始一个新任务：帮我检查公共工具包的安装权�
 
 ---
 
-### 8.3 `cmd-new` 会删除以前的对话吗？
+### 7.3 `cmd-new` 会删除以前的对话吗？
 
 不会。
 
@@ -433,7 +433,7 @@ cmd-clean sessions = 清理 cmd session
 
 ---
 
-### 8.4 `cmd-new`、`cmd`、`cmdx`、`cmd-chat` 的推荐用法
+### 7.4 `cmd-new`、`cmd`、`cmdx`、`cmd-chat` 的推荐用法
 
 开始一个新任务：
 
@@ -473,7 +473,7 @@ cmd-resume
 
 ---
 
-### 8.5 `cmd-clean sessions` 与 `cmd-new` 的区别
+### 7.5 `cmd-clean sessions` 与 `cmd-new` 的区别
 
 不要把 `cmd-clean sessions` 当作“新开任务”使用。
 
@@ -735,7 +735,7 @@ cmd "问题"
 
 默认情况下，`cmd` 和 `cmdx` 使用 DeepSeek。若要使用 GitHub Copilot 原生模型，需要先完成 native 认证。
 
-### 9.1 进入 cmd 专用 native Copilot 环境并选择模型
+### 10.1 进入 cmd 专用 native Copilot 环境并选择模型
 
 ```bash
 cmd-model
@@ -765,7 +765,7 @@ cmd-model
 
 ---
 
-### 9.2 使用 Copilot native 后端
+### 10.2 使用 Copilot native 后端
 
 ```bash
 cmd --copilot "只回答 OK"
@@ -781,7 +781,7 @@ cmd-chat --copilot
 
 ---
 
-### 9.3 显示当前 native 模型名
+### 10.3 显示当前 native 模型名
 
 Copilot CLI 的 `/model` 菜单显示名不一定能作为 `--model` 参数使用。因此 `cmd-helper` 不强行把显示名传给 `--model`。
 
@@ -1031,7 +1031,7 @@ q    退出
 
 ## 16. 清理机制
 
-### 15.1 清理 cmd session
+### 16.1 清理 cmd session
 
 ```bash
 cmd-clean sessions
@@ -1065,7 +1065,7 @@ cmd-clean
 
 ---
 
-### 15.2 清理 cache
+### 16.2 清理 cache
 
 ```bash
 cmd-clean cache
@@ -1100,7 +1100,7 @@ latest-context
 
 ---
 
-### 15.3 全部清理
+### 16.3 全部清理
 
 ```bash
 cmd-clean all
@@ -1163,7 +1163,7 @@ yes
 
 ---
 
-### 16.1 按天数清理回收站
+### 17.1 按天数清理回收站
 
 默认清理 30 天以前内容：
 
@@ -1185,7 +1185,7 @@ cmd-trash-prune 90
 
 ---
 
-### 16.2 定时清理回收站
+### 17.2 定时清理回收站
 
 默认每天 3:30 清理 30 天以前的回收站内容：
 
@@ -1215,7 +1215,7 @@ cmd-trash-auto-off
 
 ## 18. 推荐使用场景
 
-### 17.1 解释命令
+### 18.1 解释命令
 
 ```bash
 cmd "解释这条命令：find /data/users -maxdepth 3 -type d -writable 2>/dev/null"
@@ -1223,7 +1223,7 @@ cmd "解释这条命令：find /data/users -maxdepth 3 -type d -writable 2>/dev/
 
 ---
 
-### 17.2 生成只读检查命令
+### 18.2 生成只读检查命令
 
 ```bash
 cmd "我想检查当前用户是否能写入其他用户 workspace，给我只读命令"
@@ -1231,7 +1231,7 @@ cmd "我想检查当前用户是否能写入其他用户 workspace，给我只�
 
 ---
 
-### 17.3 编译报错分析
+### 18.3 编译报错分析
 
 如果已经有日志：
 
@@ -1251,7 +1251,7 @@ cmd "请分析最近 cmd-record 日志中的第一个关键错误"
 
 ---
 
-### 17.4 需要执行检查命令
+### 18.4 需要执行检查命令
 
 ```bash
 cmdx "请判断当前目录是否是 Git 仓库，必要时提出只读检查命令"
@@ -1265,7 +1265,7 @@ yes
 
 ---
 
-### 17.5 连续对话
+### 18.5 连续对话
 
 ```bash
 cmd "这是第一条问题，请记住标记 CMDCTX_ALPHA"
@@ -1392,7 +1392,7 @@ bash /data/public/tools/linux-cmd-helper/uninstall.sh
 
 ## 23. 常见问题
 
-### 22.1 `cmd: command not found`
+### 23.1 `cmd: command not found`
 
 当前 shell 临时执行：
 
@@ -1410,7 +1410,7 @@ which cmd
 
 ---
 
-### 22.2 `copilot: command not found`
+### 23.2 `copilot: command not found`
 
 说明 GitHub Copilot CLI 未安装。安装：
 
@@ -1422,7 +1422,7 @@ npm install -g @github/copilot
 
 ---
 
-### 22.3 DeepSeek 认证失败
+### 23.3 DeepSeek 认证失败
 
 检查：
 
@@ -1436,7 +1436,7 @@ test -n "$COPILOT_PROVIDER_API_KEY" && echo "DeepSeek key is set"
 
 ---
 
-### 22.4 GitHub Copilot native 报 `No authentication information found`
+### 23.4 GitHub Copilot native 报 `No authentication information found`
 
 进入 cmd 专用 native Copilot 环境：
 
@@ -1460,7 +1460,7 @@ cmd --copilot "只回答 OK"
 
 ---
 
-### 22.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
+### 23.5 `cmd --copilot -m "GPT-5 mini"` 报模型不可用
 
 Copilot `/model` 菜单显示名不一定能作为 `--model` 参数使用。推荐做法：
 
@@ -1490,7 +1490,7 @@ cmd --copilot -m "GPT-5 mini" "问题"
 
 ---
 
-### 22.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
+### 23.6 `cmd-new` 或 `cmd-chat` 进入了交互界面
 
 当前推荐使用：
 
