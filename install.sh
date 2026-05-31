@@ -128,6 +128,7 @@ echo "Basic tests:"
 echo "  cmd \"只回答 OK\""
 echo "  cmd -m pro \"只回答 OK\""
 echo "  cmdx \"请判断当前目录是否是 Git 仓库，必要时提出只读命令\""
+echo "  cmd-git status"
 echo
 echo "For GitHub Copilot native backend:"
 echo "  cmd-model"

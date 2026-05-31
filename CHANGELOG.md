@@ -26,6 +26,7 @@ Security:
 ## Unreleased
 
 ### Added
+- Add `cmd-git`, a Git-aware assistant for repository status analysis and command suggestions.
 - Add lightweight terminal UI helpers (`lib/copilot-cmd-ui.sh`) for clearer command output.
 - Add spinner while waiting for model responses.
 - Add `CMD_PLAIN` and `CMD_NO_SPINNER` environment variables.
