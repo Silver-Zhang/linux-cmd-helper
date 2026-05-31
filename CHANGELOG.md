@@ -30,10 +30,17 @@ Security:
 - Add spinner while waiting for model responses.
 - Add `CMD_PLAIN` and `CMD_NO_SPINNER` environment variables.
 - Add `cmdx --loop` for multi-round user-approved command execution.
+- Add `cmd-new` to start a new cmd session: injects current terminal context and last-record, sends the task description as the first message (non-interactive), and disables `shell`/`write` tools for safety. Subsequent `cmd`/`cmdx`/`cmd-chat` continue this session.
+- Add `cmd-resume` to open the cmd session picker (`copilot --resume`) and restore a previous task without deleting any session.
+- Add `cmd-question` to print the most recently submitted `cmd`/`cmdx` question.
+- `cmd-new` and `cmd-resume` support backend/model flags (`-m flash|pro`, `--copilot`) consistent with `cmd`/`cmdx`/`cmd-chat`.
 
 ### Changed
 - Improve separation between model info, question preview, AI response, command approval, and execution output.
 - `cmdx --loop` now displays clear round headers for each iteration.
+
+### Fixed
+- `uninstall.sh` now removes `cmd-new`, `cmd-resume`, and all installed `lib/copilot-cmd-*.sh` helpers (previously only `copilot-cmd-env.sh` was removed).
 
 - Prepare the project for open-source release.
 

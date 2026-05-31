@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/.cache/copilot-cmd"
+LAST_Q_LINK="$BASE/last-question"
+QUESTION_FILE="$LAST_Q_LINK/question.txt"
+
+if [ ! -e "$LAST_Q_LINK" ]; then
+  echo "No saved question yet. Ask something with: cmd \"your question\"" >&2
+  exit 1
+fi
+
+if [ ! -f "$QUESTION_FILE" ]; then
+  echo "Error: last-question exists but question.txt is missing: $QUESTION_FILE" >&2
+  exit 1
+fi
+
+QUESTION_DIR="$(readlink -f "$LAST_Q_LINK" 2>/dev/null || echo "$LAST_Q_LINK")"
+echo "[cmd-question] last question: $QUESTION_DIR"
+echo ""
+cat "$QUESTION_FILE"

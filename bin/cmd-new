@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+usage() {
+  cat <<'USAGE'
+用法：
+  cmd-new
+  cmd-new "新任务说明"
+  cmd-new -m pro "新任务说明"
+  cmd-new --copilot "新任务说明"
+
+说明：
+  cmd-new 新开一个 cmd 专用 chat session，用于开始新任务。
+  它会读取当前终端上下文，并把任务说明作为这条新 session 的第一条消息。
+  之后 cmd、cmdx、cmd-chat 使用 --continue 会进入这条新 session。
+  旧 session 不会被删除，可用 cmd-resume 恢复。
+
+  默认使用 DeepSeek Flash。
+  -m pro 使用 DeepSeek Pro。
+  --copilot 使用 GitHub Copilot native 当前/default 模型。
+
+  cmd-new 不执行命令（已禁用 shell/write 工具）。
+
+示例：
+  cmd-new "新任务：排查 RMC 编译失败"
+  cmd-new "新任务：检查 public 工具包权限"
+  cmd-new -m pro "新任务：深入分析 GPU 驱动异常"
+
+注意：
+  cmd-new 不会删除旧 session。
+  如需清理 session，请使用：cmd-clean sessions
+USAGE
+}
+
+BACKEND="deepseek"
+MODEL="flash"
+ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deepseek|--ds)
+      BACKEND="deepseek"
+      shift
+      ;;
+    --copilot|--github|--native|--gh)
+      BACKEND="copilot"
+      MODEL=""
+      shift
+      ;;
+    -m|--model)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing model after $1" >&2
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#--model=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        ARGS+=("$1")
+        shift
+      done
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+set -- "${ARGS[@]}"
+
+COPILOT_EXTRA_ARGS=()
+
+if [ "$BACKEND" = "deepseek" ]; then
+  export COPILOT_PROVIDER_TYPE='anthropic'
+  export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+  export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+  export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+
+  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
+    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
+    exit 1
+  fi
+
+  case "$MODEL" in
+    ""|flash)
+      export COPILOT_MODEL='deepseek-v4-flash'
+      ;;
+    pro)
+      export COPILOT_MODEL='deepseek-v4-pro'
+      ;;
+    *)
+      export COPILOT_MODEL="$MODEL"
+      ;;
+  esac
+
+elif [ "$BACKEND" = "copilot" ]; then
+  unset COPILOT_PROVIDER_TYPE
+  unset COPILOT_PROVIDER_BASE_URL
+  unset COPILOT_PROVIDER_API_KEY
+  unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+  unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+  unset COPILOT_MODEL
+
+  if [ -n "${MODEL:-}" ]; then
+    COPILOT_EXTRA_ARGS+=(--model "$MODEL")
+  fi
+
+else
+  echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+QUESTION="${*:-请读取当前上下文，等待我继续提问。}"
+BASE="$HOME/.cache/copilot-cmd"
+
+CTX="$(cmd-context)"
+
+PROMPT_FILE="$(mktemp)"
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
+{
+  cat <<'HEADER'
+你是一个谨慎的 Linux 终端命令行助手，运行环境是 Ubuntu 多用户科研服务器。
+
+这是一个新的 cmd 问题 session。
+
+严格规则：
+1. 你只能根据本文中提供的上下文、日志和用户问题进行分析。
+2. 不要尝试调用 shell、sql、glob、workspace search、文件搜索等工具。
+3. 不要试图自己读取文件系统。
+4. 如果上下文不够，直接告诉用户需要补充什么信息。
+5. 如果需要用户执行命令，优先给只读检查命令。
+6. 不要默认使用 sudo。
+7. 不要默认访问其他用户目录。
+8. 回答应简洁、直接、可操作。
+
+下面是当前终端上下文：
+
+HEADER
+
+  cat "$CTX"
+
+  echo
+  echo "## Latest cmd-record"
+  if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
+    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+    echo "last-record: ${REC_DIR:-none}"
+    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
+      echo
+      echo "### last-record/meta.txt"
+      echo '```text'
+      cat "$REC_DIR/meta.txt" 2>/dev/null || true
+      echo '```'
+    fi
+    if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/output.log" ]; then
+      echo
+      echo "### last-record/output.log tail"
+      echo '```text'
+      tail -300 "$REC_DIR/output.log" 2>/dev/null || true
+      echo '```'
+    fi
+  else
+    echo "last-record: none"
+  fi
+
+  echo
+  echo "## User question"
+  echo
+  printf '%s\n' "$QUESTION"
+} > "$PROMPT_FILE"
+
+echo "" >&2
+if [ "$BACKEND" = "deepseek" ]; then
+  echo "[cmd-new] backend: DeepSeek BYOK" >&2
+  echo "[cmd-new] model:   ${COPILOT_MODEL:-unknown}" >&2
+else
+  echo "[cmd-new] backend: GitHub Copilot native" >&2
+  if [ -n "${MODEL:-}" ]; then
+    echo "[cmd-new] model:   ${MODEL}  (--model)" >&2
+  else
+    NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
+    if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
+      echo "[cmd-new] model:   $(cat "$NATIVE_MODEL_FILE")" >&2
+    else
+      echo "[cmd-new] model:   GitHub Copilot CLI current/default model" >&2
+    fi
+  fi
+fi
+echo "[cmd-new] starting a new cmd session." >&2
+echo "" >&2
+
+# 不传 --continue：始终新建 session。
+# 后续 cmd/cmdx/cmd-chat 的 --continue 会进入这条最新 session。
+copilot -p "$(cat "$PROMPT_FILE")" \
+  "${COPILOT_EXTRA_ARGS[@]}" \
+  --deny-tool='shell(*)' \
+  --deny-tool='write'

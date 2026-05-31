@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+usage() {
+  cat <<'USAGE'
+用法：
+  cmd-resume
+  cmd-resume -m pro
+  cmd-resume --copilot
+
+说明：
+  cmd-resume 会打开 cmd 专用历史 session 选择器，让用户恢复一个旧任务。
+  恢复后进入 Copilot CLI 交互界面继续对话。
+
+  默认使用 DeepSeek Flash。
+  -m pro 使用 DeepSeek Pro。
+  --copilot 使用 GitHub Copilot native 当前/default 模型。
+
+注意：
+  cmd-resume 不会删除任何旧 session。
+  如需新开任务，使用：cmd-new "任务说明"
+USAGE
+}
+
+BACKEND="deepseek"
+MODEL="flash"
+COPILOT_EXTRA_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deepseek|--ds)
+      BACKEND="deepseek"
+      shift
+      ;;
+    --copilot|--github|--native|--gh)
+      BACKEND="copilot"
+      MODEL=""
+      shift
+      ;;
+    -m|--model)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing model after $1" >&2
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#--model=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$BACKEND" = "deepseek" ]; then
+  export COPILOT_PROVIDER_TYPE='anthropic'
+  export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+  export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+  export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+
+  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
+    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
+    exit 1
+  fi
+
+  case "$MODEL" in
+    ""|flash)
+      export COPILOT_MODEL='deepseek-v4-flash'
+      ;;
+    pro)
+      export COPILOT_MODEL='deepseek-v4-pro'
+      ;;
+    *)
+      export COPILOT_MODEL="$MODEL"
+      ;;
+  esac
+
+elif [ "$BACKEND" = "copilot" ]; then
+  unset COPILOT_PROVIDER_TYPE
+  unset COPILOT_PROVIDER_BASE_URL
+  unset COPILOT_PROVIDER_API_KEY
+  unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+  unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+  unset COPILOT_MODEL
+
+  if [ -n "${MODEL:-}" ]; then
+    COPILOT_EXTRA_ARGS+=(--model "$MODEL")
+  fi
+
+else
+  echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+echo "" >&2
+if [ "$BACKEND" = "deepseek" ]; then
+  echo "[cmd-resume] backend: DeepSeek BYOK" >&2
+  echo "[cmd-resume] model:   ${COPILOT_MODEL:-unknown}" >&2
+else
+  echo "[cmd-resume] backend: GitHub Copilot native" >&2
+fi
+echo "[cmd-resume] opening session picker..." >&2
+echo "" >&2
+
+exec copilot --resume "${COPILOT_EXTRA_ARGS[@]}"
