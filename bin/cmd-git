@@ -1,0 +1,512 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cmd-git — Git-aware AI assistant.
+#
+# 它会自动读取当前 Git 仓库的【只读】状态，判断用户最可能要做的下一步操作，
+# 并给出专业、安全、可复制的 Git 命令建议。
+#
+# 安全边界：
+#   1. cmd-git 默认只执行只读 Git 命令来收集上下文；
+#   2. 它不会自动执行 git add / commit / push / pull / reset / clean / rebase
+#      等会修改仓库或远程状态的命令；
+#   3. 对修改性命令只给出建议和解释；
+#   4. 对高风险命令（reset --hard、clean -fd、push --force、rebase 等）必须明确警告。
+#
+# 与 cmd / cmdx 保持一致的模型后端语义：
+#   cmd-git "问题"                 默认 DeepSeek Flash
+#   cmd-git -m pro "问题"          DeepSeek Pro
+#   cmd-git --copilot "问题"       GitHub Copilot native 当前/default 模型
+#   cmd-git --copilot -m <ID> "问题"  显式 Copilot 内部模型 ID
+
+# UI 库不需要配置文件，先加载，方便在非 Git 仓库时也能友好提示。
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-ui.sh"
+
+usage() {
+  cat <<'USAGE'
+用法：
+  cmd-git                      进入交互式菜单
+  cmd-git "问题"               自然语言提问（自动附带当前 Git 状态）
+  cmd-git <子命令>             针对特定 Git 场景获取建议
+
+子命令：
+  status     解释当前 Git 状态
+  next       预测下一步最可能操作
+  diff       总结当前修改
+  commit     指导如何提交，并可生成 commit message
+  push       判断是否适合 push，并说明命令
+  pull       判断是否适合 pull，并说明风险
+  undo       撤销向导
+  conflict   冲突解决助手
+  branch     分支管理助手
+  stash      stash 使用助手
+  remote     remote / upstream 诊断助手
+  log        提交历史解释助手
+  pr         Pull Request / GitHub 协作建议
+
+模型选项（与 cmd / cmdx 一致）：
+  默认：              DeepSeek Flash
+  -m pro：            DeepSeek Pro
+  --copilot：         GitHub Copilot native 当前/default 模型
+  --copilot -m <ID>： GitHub Copilot native 显式模型 ID
+
+示例：
+  cmd-git
+  cmd-git status
+  cmd-git next
+  cmd-git "我现在为什么 push 失败？"
+  cmd-git "我应该 git pull 还是 git push？"
+  cmd-git -m pro commit
+  cmd-git --copilot conflict
+
+说明：
+  cmd-git 默认只执行只读 Git 命令收集上下文，绝不自动修改仓库。
+  如需执行建议命令，请手动复制执行，或使用 cmdx 进行人工审批式执行。
+USAGE
+}
+
+# -----------------------------
+# 0. 解析模型/后端选项
+# -----------------------------
+BACKEND="deepseek"
+MODEL="flash"
+COPILOT_EXTRA_ARGS=()
+ARGS=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deepseek|--ds)
+      BACKEND="deepseek"
+      shift
+      ;;
+    --copilot|--github|--native|--gh)
+      BACKEND="copilot"
+      MODEL=""
+      shift
+      ;;
+    -m|--model)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing model after $1" >&2
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      MODEL="${1#--model=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do
+        ARGS+=("$1")
+        shift
+      done
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+set -- "${ARGS[@]}"
+
+# -----------------------------
+# 1. Git 仓库检测（非 Git 仓库时友好提示，不调用模型）
+# -----------------------------
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  cat >&2 <<'NOTGIT'
+当前目录不是 Git 仓库。
+如果你想初始化仓库，可使用：
+git init
+如果你想进入已有仓库，请 cd 到包含 .git 的目录。
+
+补充说明：
+  git init   在当前目录创建一个全新的空仓库。
+  git clone  从远程地址复制一个已有仓库（含历史和 remote 配置）到本地。
+
+如需让 AI 进一步解释，请在某个 Git 仓库内运行 cmd-git，
+或使用：cmd "git init 和 git clone 有什么区别？"
+NOTGIT
+  exit 0
+fi
+
+# -----------------------------
+# 2. 确定用户目标（子命令 / 菜单 / 自然语言问题）
+# -----------------------------
+# TASK_DESC: 给模型的"用户目标"说明
+# USER_QUESTION: 用于 UI 显示的问题或选择项
+TASK_DESC=""
+USER_QUESTION=""
+
+map_subcommand() {
+  case "$1" in
+    status)
+      TASK_DESC="请解释当前 Git 仓库的状态：分支、upstream、ahead/behind、暂存区、工作区改动、是否有冲突等，并说明它们的含义。"
+      USER_QUESTION="解释当前 Git 状态 (status)"
+      ;;
+    next)
+      TASK_DESC="请根据当前 Git 状态，判断用户下一步最可能应该做什么，并给出推荐命令。"
+      USER_QUESTION="判断下一步最可能操作 (next)"
+      ;;
+    diff)
+      TASK_DESC="请根据 git diff --stat 和 git diff --cached --stat 总结当前这次改动的范围和重点（注意：未提供完整 diff 内容）。"
+      USER_QUESTION="总结当前修改 (diff)"
+      ;;
+    commit)
+      TASK_DESC="请指导用户如何提交当前修改，说明应该 git add 哪些文件、如何写规范的 commit message，并给出一个建议的 commit message 示例。提醒用户 cmd-git 不会自动执行 git add/commit。"
+      USER_QUESTION="提交当前修改 (commit)"
+      ;;
+    push)
+      TASK_DESC="请判断当前是否适合 push（结合 upstream、ahead/behind、是否有未提交改动），说明推荐的 push 命令及前置条件，并指出 push 失败的常见原因。默认不要建议 --force。"
+      USER_QUESTION="推送到远程仓库 (push)"
+      ;;
+    pull)
+      TASK_DESC="请判断当前是否适合 pull（结合 upstream、ahead/behind、工作区是否干净），说明 pull / fetch + merge / fetch + rebase 的区别与风险。"
+      USER_QUESTION="拉取远程更新 (pull)"
+      ;;
+    undo)
+      TASK_DESC="请作为撤销向导，根据当前状态说明如何安全撤销不同层级的修改（工作区改动、暂存区、最近一次提交等），区分 restore / checkout / reset 的影响，并对会丢失数据或改写历史的命令明确警告。"
+      USER_QUESTION="撤销某些修改 (undo)"
+      ;;
+    conflict)
+      TASK_DESC="请作为冲突解决助手，根据当前状态判断是否存在冲突，说明如何查看冲突文件、如何解决并标记为已解决、以及如何中止当前的 merge/rebase。"
+      USER_QUESTION="解决冲突 (conflict)"
+      ;;
+    branch)
+      TASK_DESC="请作为分支管理助手，说明当前分支情况，以及如何安全地创建、切换、重命名或删除分支，优先使用 git switch / git branch。"
+      USER_QUESTION="切换或创建分支 (branch)"
+      ;;
+    stash)
+      TASK_DESC="请作为 stash 使用助手，说明当前是否有可暂存的改动，以及如何使用 git stash 保存、查看、恢复和删除暂存，并提示恢复时可能产生冲突。"
+      USER_QUESTION="使用 stash (stash)"
+      ;;
+    remote)
+      TASK_DESC="请作为 remote / upstream 诊断助手，根据当前 remote 和 upstream 配置，说明如何查看和设置远程仓库、如何配置 upstream 跟踪分支，并诊断常见的 remote 相关问题。"
+      USER_QUESTION="诊断 remote / upstream (remote)"
+      ;;
+    log)
+      TASK_DESC="请作为提交历史解释助手，根据最近的提交历史，解释当前分支的提交走向、分叉与合并情况，并说明如何更有针对性地查看历史。"
+      USER_QUESTION="解释提交历史 (log)"
+      ;;
+    pr)
+      TASK_DESC="请作为 Pull Request / GitHub 协作建议助手，根据当前分支与 upstream 状态，说明如何把当前分支推送并发起 Pull Request、保持分支与主分支同步的安全做法，以及评审前的自查要点。"
+      USER_QUESTION="Pull Request / 协作建议 (pr)"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+if [ "$#" -eq 0 ]; then
+  # 交互式菜单
+  cat >&2 <<'MENU'
+
+请选择你想做什么：
+
+1) 解释当前 Git 状态
+2) 判断我下一步最可能该做什么
+3) 我想提交当前修改
+4) 我想推送到远程仓库
+5) 我想拉取远程更新
+6) 我想查看这次改了什么
+7) 我想撤销某些修改
+8) 我想解决冲突
+9) 我想切换或创建分支
+10) 我想整理提交历史
+q) 退出
+
+MENU
+  if ! read -r -p "请选择: " choice; then
+    exit 0
+  fi
+  case "$choice" in
+    1) map_subcommand status ;;
+    2) map_subcommand next ;;
+    3) map_subcommand commit ;;
+    4) map_subcommand push ;;
+    5) map_subcommand pull ;;
+    6) map_subcommand diff ;;
+    7) map_subcommand undo ;;
+    8) map_subcommand conflict ;;
+    9) map_subcommand branch ;;
+    10) map_subcommand log ;;
+    q|Q|quit|exit|"") exit 0 ;;
+    *)
+      echo "无效输入：$choice" >&2
+      exit 1
+      ;;
+  esac
+elif [ "$#" -eq 1 ] && map_subcommand "$1"; then
+  : # 单个已知子命令，TASK_DESC 已设置
+else
+  # 自然语言问题
+  USER_QUESTION="$*"
+  TASK_DESC="请回答用户的问题，并结合当前 Git 仓库状态给出准确、安全、可复制的 Git 命令建议。"
+fi
+
+# -----------------------------
+# 3. 设置模型后端环境
+# -----------------------------
+# 复用 DeepSeek 私有配置（与 cmd/cmdx 一致），并设置 cmd 专用 COPILOT_HOME。
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-env.sh"
+
+if [ "$BACKEND" = "deepseek" ]; then
+  export COPILOT_PROVIDER_TYPE='anthropic'
+  export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+  export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+  export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+
+  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
+    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
+    exit 1
+  fi
+
+  case "$MODEL" in
+    ""|flash)
+      export COPILOT_MODEL='deepseek-v4-flash'
+      ;;
+    pro)
+      export COPILOT_MODEL='deepseek-v4-pro'
+      ;;
+    *)
+      export COPILOT_MODEL="$MODEL"
+      ;;
+  esac
+
+elif [ "$BACKEND" = "copilot" ]; then
+  unset COPILOT_PROVIDER_TYPE
+  unset COPILOT_PROVIDER_BASE_URL
+  unset COPILOT_PROVIDER_API_KEY
+  unset COPILOT_PROVIDER_MAX_PROMPT_TOKENS
+  unset COPILOT_PROVIDER_MAX_OUTPUT_TOKENS
+  unset COPILOT_MODEL
+
+  if [ -n "${MODEL:-}" ]; then
+    COPILOT_EXTRA_ARGS+=(--model "$MODEL")
+  fi
+else
+  echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+PROMPT_FILE="$TMP_DIR/prompt.txt"
+GIT_CTX="$TMP_DIR/git_context.txt"
+
+# -----------------------------
+# 4. 收集只读 Git 状态
+# -----------------------------
+REPO_TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)"
+CUR_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+[ -n "$CUR_BRANCH" ] || CUR_BRANCH="(detached HEAD)"
+
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+if [ -n "$UPSTREAM" ]; then
+  AHEAD_BEHIND="$(git rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null || true)"
+  if [ -n "$AHEAD_BEHIND" ]; then
+    AHEAD="$(printf '%s' "$AHEAD_BEHIND" | awk '{print $1}')"
+    BEHIND="$(printf '%s' "$AHEAD_BEHIND" | awk '{print $2}')"
+  else
+    AHEAD="?"
+    BEHIND="?"
+  fi
+else
+  UPSTREAM="none"
+  AHEAD="-"
+  BEHIND="-"
+fi
+
+if git diff --cached --quiet 2>/dev/null; then
+  HAS_STAGED="no"
+else
+  HAS_STAGED="yes"
+fi
+
+if git diff --quiet 2>/dev/null; then
+  HAS_UNSTAGED="no"
+else
+  HAS_UNSTAGED="yes"
+fi
+
+CONFLICT_FILES="$(git diff --name-only --diff-filter=U 2>/dev/null || true)"
+if [ -n "$CONFLICT_FILES" ]; then
+  HAS_CONFLICT="yes"
+else
+  HAS_CONFLICT="no"
+fi
+
+{
+  echo "## Git context (read-only)"
+  echo '```text'
+  echo "toplevel: $REPO_TOPLEVEL"
+  echo "branch:   $CUR_BRANCH"
+  echo "upstream: $UPSTREAM"
+  echo "ahead:    $AHEAD"
+  echo "behind:   $BEHIND"
+  echo "staged changes:   $HAS_STAGED"
+  echo "unstaged changes: $HAS_UNSTAGED"
+  echo "conflicts:        $HAS_CONFLICT"
+  echo '```'
+  echo
+
+  echo "### git status --short --branch"
+  echo '```text'
+  git status --short --branch 2>/dev/null || true
+  echo '```'
+  echo
+
+  echo "### git remote -v"
+  echo '```text'
+  git remote -v 2>/dev/null || true
+  echo '```'
+  echo
+
+  echo "### git log --oneline --decorate --graph -20"
+  echo '```text'
+  git log --oneline --decorate --graph -20 2>/dev/null || true
+  echo '```'
+  echo
+
+  echo "### git diff --stat"
+  echo '```text'
+  git diff --stat 2>/dev/null || true
+  echo '```'
+  echo
+
+  echo "### git diff --cached --stat"
+  echo '```text'
+  git diff --cached --stat 2>/dev/null || true
+  echo '```'
+  echo
+
+  if [ "$HAS_CONFLICT" = "yes" ]; then
+    echo "### conflict files (git diff --name-only --diff-filter=U)"
+    echo '```text'
+    printf '%s\n' "$CONFLICT_FILES"
+    echo '```'
+    echo
+  fi
+
+  echo "### git stash list (max 5)"
+  echo '```text'
+  git stash list 2>/dev/null | head -n 5 || true
+  echo '```'
+  echo
+
+  echo "(注意：未发送完整 git diff，只发送了 --stat 概要，以避免泄露敏感内容或过长。)"
+} > "$GIT_CTX"
+
+# -----------------------------
+# 5. 构造发送给模型的 prompt
+# -----------------------------
+{
+  cat <<'HEADER'
+你是一个专业 Git 命令专家和 Linux 终端助手。
+
+请根据下面提供的当前 Git 仓库【只读】状态，判断用户最可能要完成的目标，并给出准确、安全、可复制的 Git 命令建议。
+
+严格规则：
+1. 你只能根据本文中提供的 Git 上下文和用户目标进行分析。
+2. 不要尝试调用 shell、文件搜索等工具，也不要自己读取文件系统。
+3. 请优先解释当前状态，再给出推荐命令。
+4. 对于会丢失数据或改写历史的命令（例如 git reset --hard、git clean -fd、git push --force、git rebase、git checkout -- .、git restore .），必须明确提示风险。
+5. 默认不要建议 --force，除非用户明确要求且你已说明风险。
+6. cmd-git 不会自动执行任何修改性 Git 命令；如果需要执行，请提示用户手动复制命令执行，或使用 cmdx 进行人工审批式执行。
+7. 不要默认使用 sudo，不要访问其他用户目录。
+
+回复建议结构（问题简单时可适当简化）：
+1. 当前状态判断
+2. 你可能想做什么
+3. 推荐命令
+4. 命令解释
+5. 风险提示
+6. 下一步建议
+
+HEADER
+
+  cat "$GIT_CTX"
+
+  echo
+  echo "## 用户目标"
+  echo '```text'
+  printf '%s\n' "$TASK_DESC"
+  if [ -n "$USER_QUESTION" ]; then
+    echo
+    echo "用户问题/选择: $USER_QUESTION"
+  fi
+  echo '```'
+} > "$PROMPT_FILE"
+
+# -----------------------------
+# 6. 显示当前后端、模型与仓库状态
+# -----------------------------
+_CMD_BACKEND_DISPLAY=""
+_CMD_MODEL_DISPLAY=""
+
+if [ "$BACKEND" = "deepseek" ]; then
+  _CMD_BACKEND_DISPLAY="DeepSeek BYOK"
+  _CMD_MODEL_DISPLAY="${COPILOT_MODEL:-unknown}"
+elif [ "$BACKEND" = "copilot" ]; then
+  _CMD_BACKEND_DISPLAY="GitHub Copilot native"
+  if [ -n "${MODEL:-}" ]; then
+    _CMD_MODEL_DISPLAY="${MODEL} (--model)"
+  else
+    NATIVE_MODEL_FILE="$HOME/.config/copilot-cmd/current-native-model"
+    if [ -f "$NATIVE_MODEL_FILE" ] && [ -s "$NATIVE_MODEL_FILE" ]; then
+      _CMD_MODEL_DISPLAY="$(cat "$NATIVE_MODEL_FILE")"
+    else
+      _CMD_MODEL_DISPLAY="Copilot CLI current/default"
+    fi
+  fi
+fi
+
+ui_model_info "cmd-git" "$_CMD_BACKEND_DISPLAY" "$_CMD_MODEL_DISPLAY" "git" \
+  "repo" "$REPO_TOPLEVEL" \
+  "branch" "$CUR_BRANCH" \
+  "upstream" "$UPSTREAM" \
+  "ahead" "$AHEAD" \
+  "behind" "$BEHIND" \
+  "staged" "$HAS_STAGED" \
+  "unstaged" "$HAS_UNSTAGED" \
+  "conflict" "$HAS_CONFLICT" \
+  "ask" "$USER_QUESTION"
+
+# -----------------------------
+# 7. 调用 Copilot CLI（只读：禁止 shell/write 工具）
+# -----------------------------
+AI_RESPONSE_FILE="$TMP_DIR/ai_response.txt"
+
+ui_spinner_start "Waiting for model response..."
+
+_cmd_git_call_copilot() {
+  if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+    "${COPILOT_EXTRA_ARGS[@]}" \
+    --deny-tool='shell(*)' \
+    --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1; then
+    copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
+      "${COPILOT_EXTRA_ARGS[@]}" \
+      --deny-tool='shell' \
+      --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1
+  fi
+}
+
+_cmd_git_call_copilot
+_CMD_RC=$?
+ui_spinner_stop
+
+ui_ai_begin
+cat "$AI_RESPONSE_FILE"
+ui_ai_end
+
+exit "$_CMD_RC"
