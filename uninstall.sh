@@ -8,6 +8,8 @@ BIN_LIST="
 cmd
 cmdx
 cmd-chat
+cmd-new
+cmd-resume
 cmd-context
 cmd-run
 cmd-record
@@ -36,6 +38,16 @@ done
 if [ -f "$HOME/.local/lib/copilot-cmd-env.sh" ]; then
   rm -f "$HOME/.local/lib/copilot-cmd-env.sh"
   echo "Removed: ~/.local/lib/copilot-cmd-env.sh"
+fi
+
+if [ -f "$HOME/.local/lib/copilot-cmd-context.sh" ]; then
+  rm -f "$HOME/.local/lib/copilot-cmd-context.sh"
+  echo "Removed: ~/.local/lib/copilot-cmd-context.sh"
+fi
+
+if [ -f "$HOME/.local/lib/copilot-cmd-ui.sh" ]; then
+  rm -f "$HOME/.local/lib/copilot-cmd-ui.sh"
+  echo "Removed: ~/.local/lib/copilot-cmd-ui.sh"
 fi
 
 echo
