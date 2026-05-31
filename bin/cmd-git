@@ -29,6 +29,9 @@ usage() {
   cmd-git                      进入交互式菜单
   cmd-git "问题"               自然语言提问（自动附带当前 Git 状态）
   cmd-git <子命令>             针对特定 Git 场景获取建议
+  cmd-git -e                   用编辑器写长问题（默认 nano 或 $EDITOR）
+  cmd-git -f <file>            从文件读取问题
+  cmd-git -                    从标准输入读取问题（Ctrl+D 结束）
 
 子命令：
   status     解释当前 Git 状态
@@ -57,6 +60,9 @@ usage() {
   cmd-git next
   cmd-git "我现在为什么 push 失败？"
   cmd-git "我应该 git pull 还是 git push？"
+  cmd-git -e
+  cmd-git -f question.txt
+  echo "为什么 merge 失败？" | cmd-git -
   cmd-git -m pro commit
   cmd-git --copilot conflict
 
@@ -73,6 +79,8 @@ BACKEND="deepseek"
 MODEL="flash"
 COPILOT_EXTRA_ARGS=()
 ARGS=()
+INPUT_MODE=""
+INPUT_FILE=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -95,6 +103,23 @@ while [ "$#" -gt 0 ]; do
       ;;
     --model=*)
       MODEL="${1#--model=}"
+      shift
+      ;;
+    -e|--edit|--editor)
+      INPUT_MODE="editor"
+      shift
+      ;;
+    -f|--file)
+      if [ "$#" -lt 2 ]; then
+        echo "Error: missing file path after $1" >&2
+        exit 1
+      fi
+      INPUT_MODE="file"
+      INPUT_FILE="$2"
+      shift 2
+      ;;
+    -|--stdin)
+      INPUT_MODE="stdin"
       shift
       ;;
     -h|--help)
@@ -206,7 +231,34 @@ map_subcommand() {
   return 0
 }
 
-if [ "$#" -eq 0 ]; then
+if [ -n "$INPUT_MODE" ]; then
+  # 使用 -e / -f / - 输入方式
+  _INPUT_TMP="$(mktemp)"
+  case "$INPUT_MODE" in
+    editor)
+      EDITOR_CMD="${EDITOR:-nano}"
+      "$EDITOR_CMD" "$_INPUT_TMP"
+      ;;
+    file)
+      if [ ! -f "$INPUT_FILE" ]; then
+        echo "Error: file not found: $INPUT_FILE" >&2
+        exit 1
+      fi
+      cat "$INPUT_FILE" > "$_INPUT_TMP"
+      ;;
+    stdin)
+      cat > "$_INPUT_TMP"
+      ;;
+  esac
+  if [ ! -s "$_INPUT_TMP" ]; then
+    rm -f "$_INPUT_TMP"
+    echo "Error: empty question." >&2
+    exit 1
+  fi
+  USER_QUESTION="$(cat "$_INPUT_TMP")"
+  rm -f "$_INPUT_TMP"
+  TASK_DESC="请回答用户的问题，并结合当前 Git 仓库状态给出准确、安全、可复制的 Git 命令建议。"
+elif [ "$#" -eq 0 ]; then
   # 交互式菜单
   cat >&2 <<'MENU'
 
