@@ -23,6 +23,7 @@
 | `cmd`                   | 非执行型 AI 问答助手，继续当前任务上下文，回答完返回普通 shell               |
 | `cmdx`                  | 审批执行型助手，AI 可提出命令，但必须用户确认后才执行                        |
 | `cmd-chat`              | 进入 cmd 专用 Copilot CLI 连续对话界面                         |
+| `cmd-git`               | Git 专家助手，自动读取当前仓库只读状态并给出安全的 Git 命令建议          |
 | `cmd-new`               | 新开一个任务上下文（不删除旧对话）                                    |
 | `cmd-resume`            | 从历史 cmd session 中选择旧任务并恢复                             |
 | `cmd-context`           | 生成当前终端上下文快照                                          |
@@ -1643,7 +1644,7 @@ for f in \
   cmd cmdx cmd-chat cmd-context cmd-run cmd-record cmd-suggest cmd-clean \
   cmd-trash-list cmd-trash-empty cmd-trash-prune cmd-trash-auto-on cmd-trash-auto-off \
   cmd-trash-auto-status cmd-model cmd-model-set cmd-model-current cmd-question \
-  cmd-new cmd-resume copilot-cmd-send
+  cmd-new cmd-resume cmd-git copilot-cmd-send
 do
   if [ -f "$HOME/.local/bin/$f" ]; then
     cp -a "$HOME/.local/bin/$f" "$PUB/bin/"
@@ -1683,6 +1684,10 @@ cmdx "请判断当前目录是否是 Git 仓库，必要时提出只读命令"
 ```
 
 ```bash
+cmd-git status
+```
+
+```bash
 cmd-suggest
 ```
 
@@ -1708,7 +1713,132 @@ cmd --copilot "只回答 OK"
 
 ---
 
-## 27. 推荐日常用法总结
+## 27. `cmd-git`：Git 专家助手
+
+`cmd-git` 是一个专门的 Git 辅助命令。它不是简单地调用 `cmd "git 问题"`，而是一个能够**自动感知当前 Git 仓库状态**、预测用户下一步意图、提供专业且安全的 Git 命令建议的智能 Git 助手。
+
+它会：
+
+1. 自动读取当前仓库的**只读** Git 状态；
+2. 判断用户下一步最可能要做的操作；
+3. 给出准确、清晰、可复制的 Git 命令建议；
+4. 解释 Git 概念和当前状态；
+5. **默认不执行任何会修改仓库或远程状态的 Git 命令**。
+
+### 27.1 自动读取的只读状态
+
+`cmd-git` 只执行只读 Git 命令来收集上下文，例如：
+
+```text
+git rev-parse --is-inside-work-tree
+git rev-parse --show-toplevel
+git status --short --branch
+git branch --show-current
+git remote -v
+git log --oneline --decorate --graph -20
+git diff --stat
+git diff --cached --stat
+git stash list
+```
+
+如果存在 upstream，还会收集 ahead/behind 计数。
+
+为避免泄露敏感内容或发送过长内容，`cmd-git` **默认不发送完整 `git diff`**，只发送 `--stat` 概要。
+
+UI 会清晰显示当前仓库、分支、upstream、ahead/behind、是否有暂存/未暂存修改、是否有冲突、当前模型后端，以及你的问题或选择项。
+
+### 27.2 用法
+
+不带参数时进入交互式菜单：
+
+```bash
+cmd-git
+```
+
+```text
+请选择你想做什么：
+
+1) 解释当前 Git 状态
+2) 判断我下一步最可能该做什么
+3) 我想提交当前修改
+4) 我想推送到远程仓库
+5) 我想拉取远程更新
+6) 我想查看这次改了什么
+7) 我想撤销某些修改
+8) 我想解决冲突
+9) 我想切换或创建分支
+10) 我想整理提交历史
+q) 退出
+```
+
+带自然语言问题时，会自动附带当前 Git 状态：
+
+```bash
+cmd-git "我现在为什么 push 失败？"
+cmd-git "我应该 git pull 还是 git push？"
+cmd-git "如何撤销 README.md 的修改但保留其他文件？"
+```
+
+也支持一组明确的子命令：
+
+```bash
+cmd-git status     # 解释当前 Git 状态
+cmd-git next       # 预测下一步最可能操作
+cmd-git diff       # 总结当前修改
+cmd-git commit     # 指导如何提交，并可生成 commit message
+cmd-git push       # 判断是否适合 push，并说明命令
+cmd-git pull       # 判断是否适合 pull，并说明风险
+cmd-git undo       # 撤销向导
+cmd-git conflict   # 冲突解决助手
+cmd-git branch     # 分支管理助手
+cmd-git stash      # stash 使用助手
+cmd-git remote     # remote / upstream 诊断助手
+cmd-git log        # 提交历史解释助手
+cmd-git pr         # Pull Request / GitHub 协作建议
+```
+
+### 27.3 模型后端
+
+`cmd-git` 复用与 `cmd` / `cmdx` 一致的模型选择语义：
+
+```bash
+cmd-git "问题"                    # 默认 DeepSeek Flash
+cmd-git -m pro "问题"             # DeepSeek Pro
+cmd-git --copilot "问题"          # GitHub Copilot native 当前/default 模型
+cmd-git --copilot -m <ID> "问题"  # 显式 Copilot 内部模型 ID
+```
+
+### 27.4 非 Git 仓库
+
+如果当前目录不是 Git 仓库，`cmd-git` 会给出友好提示，而不会崩溃：
+
+```text
+当前目录不是 Git 仓库。
+如果你想初始化仓库，可使用：
+git init
+如果你想进入已有仓库，请 cd 到包含 .git 的目录。
+```
+
+### 27.5 安全说明
+
+1. `cmd-git` 默认只执行只读 Git 命令；
+2. 它不会自动执行 `git add`、`git commit`、`git push`、`git pull`、`git reset`、`git clean`、`git rebase` 等修改性命令；
+3. 对修改性命令只给出建议和解释；
+4. 对高风险命令（如 `git reset --hard`、`git clean -fd`、`git push --force`、`git rebase`、`git checkout -- .`、`git restore .`）会明确警告；
+5. 默认不会建议 `--force`，除非你明确要求并已了解风险。
+
+### 27.6 与 `cmdx` 的关系
+
+`cmd-git` 与 `cmd` 一样，只负责**分析和建议**，永远不会自动执行命令。
+
+如果你确认要执行 `cmd-git` 给出的某条命令，可以：
+
+- 手动复制命令到终端执行；或
+- 使用 `cmdx` 进行人工审批式执行（`cmdx` 会先展示命令，等你确认后才执行，高风险命令需要强确认）。
+
+---
+
+## 28. 推荐日常用法总结
 
 普通问题：
 
@@ -1750,6 +1880,12 @@ cmd-record
 
 ```bash
 cmd-chat
+```
+
+Git 状态分析与命令建议：
+
+```bash
+cmd-git
 ```
 
 清理 session：

@@ -8,6 +8,7 @@ BIN_LIST="
 cmd
 cmdx
 cmd-chat
+cmd-git
 cmd-new
 cmd-resume
 cmd-context
