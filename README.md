@@ -76,13 +76,13 @@ bash /data/public/tools/linux-cmd-helper/install.sh
 ~/.copilot-cmd
 ```
 
-如果安装后当前 shell 找不到 `cmd`，执行：
+如果安装后当前 shell 找不到 `cmd`，将下面这一行写入 `~/.bashrc` 中：
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-重新登录 SSH 后，通常会自动从 `~/.profile` 生效。
+重新登录 SSH 后，通常会自动从 `~/.profile` 生效。然后运行 `source ~/.bashrc` 进行环境更新!
 
 ---
 
