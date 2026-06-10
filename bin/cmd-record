@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
+
 if ! command -v script >/dev/null 2>&1; then
-  echo "Error: 'script' command not found. Please install util-linux." >&2
+  echo "错误：未找到 'script' 命令。" >&2
+  if cmd_is_macos; then
+    echo "macOS 通常由系统自带 'script'，请检查你的 PATH。" >&2
+  else
+    echo "Linux 上请从 util-linux 安装（例如 apt install bsdutils / util-linux）。" >&2
+  fi
   exit 1
 fi
 
@@ -21,13 +29,21 @@ mkdir -p "$DIR"
 
 ln -sfn "$DIR" "$BASE/last-record"
 
-echo "cmd-record: recording shell session."
-echo "cmd-record: log file: $DIR/output.log"
-echo "cmd-record: type 'exit' to stop recording."
+echo "cmd-record: 正在记录 shell 会话。"
+echo "cmd-record: 日志文件: $DIR/output.log"
+echo "cmd-record: 输入 'exit' 结束记录。"
 echo
 
 set +e
-script -q -f "$DIR/output.log" -c "${SHELL:-/bin/bash} -i"
+if cmd_is_macos; then
+  # BSD 版 script（macOS）：`script [-q] file [command ...]`，不支持
+  # util-linux 的 -f / -c 参数。不带命令时它会启动一个交互式 shell
+  # （$SHELL），记录整个会话，直到你输入 `exit` 为止。
+  script -q "$DIR/output.log"
+else
+  # util-linux 版 script（Linux）：-f 每次写入后刷新，-c 运行指定命令。
+  script -q -f "$DIR/output.log" -c "${SHELL:-/bin/bash} -i"
+fi
 RC=$?
 set -e
 
@@ -37,7 +53,7 @@ set -e
 } >> "$DIR/meta.txt"
 
 echo
-echo "cmd-record: stopped."
-echo "cmd-record: saved log: $DIR/output.log"
+echo "cmd-record: 已停止。"
+echo "cmd-record: 已保存日志: $DIR/output.log"
 
 exit "$RC"

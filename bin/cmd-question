@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
+
 BASE="$HOME/.cache/copilot-cmd"
 LAST_Q_LINK="$BASE/last-question"
 QUESTION_FILE="$LAST_Q_LINK/question.txt"
@@ -15,7 +18,7 @@ if [ ! -f "$QUESTION_FILE" ]; then
   exit 1
 fi
 
-QUESTION_DIR="$(readlink -f "$LAST_Q_LINK" 2>/dev/null || echo "$LAST_Q_LINK")"
+QUESTION_DIR="$(resolve_path "$LAST_Q_LINK" 2>/dev/null || echo "$LAST_Q_LINK")"
 echo "[cmd-question] last question: $QUESTION_DIR"
 echo ""
 cat "$QUESTION_FILE"

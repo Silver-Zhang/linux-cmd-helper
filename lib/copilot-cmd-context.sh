@@ -2,6 +2,13 @@
 # copilot-cmd-context.sh — shared context helper functions for cmd/cmdx
 # Provides context assembly functions with different verbosity levels.
 
+# 确保跨平台公共函数（resolve_path 等）可用，即使本库在
+# copilot-cmd-platform.sh 之前被 source 也能正常工作。
+if ! command -v resolve_path >/dev/null 2>&1; then
+  # shellcheck disable=SC1090
+  [ -f "$HOME/.local/lib/copilot-cmd-platform.sh" ] && source "$HOME/.local/lib/copilot-cmd-platform.sh"
+fi
+
 # Env defaults for tail lines
 CMD_LAST_RUN_TAIL="${CMD_LAST_RUN_TAIL:-200}"
 CMD_LAST_RECORD_TAIL="${CMD_LAST_RECORD_TAIL:-300}"
@@ -64,7 +71,7 @@ append_compact_context() {
   # last-run meta only
   if [ -L "$_CTX_BASE/last-run" ] || [ -d "$_CTX_BASE/last-run" ]; then
     local run_dir
-    run_dir="$(readlink -f "$_CTX_BASE/last-run" 2>/dev/null || true)"
+    run_dir="$(resolve_path "$_CTX_BASE/last-run" 2>/dev/null || true)"
     if [ -n "$run_dir" ] && [ -d "$run_dir" ]; then
       echo "## Latest cmd-run"
       echo "path: $run_dir"
@@ -80,7 +87,7 @@ append_compact_context() {
   # last-record meta only
   if [ -L "$_CTX_BASE/last-record" ] || [ -d "$_CTX_BASE/last-record" ]; then
     local rec_dir
-    rec_dir="$(readlink -f "$_CTX_BASE/last-record" 2>/dev/null || true)"
+    rec_dir="$(resolve_path "$_CTX_BASE/last-record" 2>/dev/null || true)"
     if [ -n "$rec_dir" ] && [ -d "$rec_dir" ]; then
       echo "## Latest cmd-record"
       echo "path: $rec_dir"
@@ -99,7 +106,7 @@ append_compact_context() {
 append_last_run_tail() {
   if [ -L "$_CTX_BASE/last-run" ] || [ -d "$_CTX_BASE/last-run" ]; then
     local run_dir
-    run_dir="$(readlink -f "$_CTX_BASE/last-run" 2>/dev/null || true)"
+    run_dir="$(resolve_path "$_CTX_BASE/last-run" 2>/dev/null || true)"
     if [ -n "$run_dir" ] && [ -d "$run_dir" ]; then
       echo "## Latest cmd-run"
       echo "path: $run_dir"
@@ -135,7 +142,7 @@ append_last_run_tail() {
 append_last_record_tail() {
   if [ -L "$_CTX_BASE/last-record" ] || [ -d "$_CTX_BASE/last-record" ]; then
     local rec_dir
-    rec_dir="$(readlink -f "$_CTX_BASE/last-record" 2>/dev/null || true)"
+    rec_dir="$(resolve_path "$_CTX_BASE/last-record" 2>/dev/null || true)"
     if [ -n "$rec_dir" ] && [ -d "$rec_dir" ]; then
       echo "## Latest cmd-record"
       echo "path: $rec_dir"

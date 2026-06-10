@@ -1,6 +1,8 @@
-# cmd-helper：服务器终端 AI 命令行助手
+# cmd-helper：终端 AI 命令行助手（Linux + macOS）
 
-`cmd-helper` 是面向 Linux 多用户科研服务器的终端 AI 辅助工具。它基于 GitHub Copilot CLI 封装，默认接入 DeepSeek API，用于辅助 Linux 命令生成、错误日志分析、服务器排错、命令解释、上下文记录和人工审批式命令执行。
+`cmd-helper` 是面向 Linux 多用户科研服务器、同时兼容 macOS（Apple Silicon 与 Intel）的终端 AI 辅助工具。它基于 GitHub Copilot CLI 封装，默认接入 DeepSeek API，用于辅助命令生成、错误日志分析、服务器排错、命令解释、上下文记录和人工审批式命令执行。
+
+> 跨平台说明：工具本体是一组纯 Bash 脚本，安装到当前用户目录（`~/.local/bin`、`~/.local/lib` 等），不需要 root，也不会写入 `/usr/local/bin` 等系统目录。安装脚本会自动识别 Linux（`uname -s` = `Linux`）和 macOS（`uname -s` = `Darwin`），并自动选择正确的 PATH 启动文件。除 GitHub Copilot CLI / Node / npm 外，不引入 Python、Go、Rust 等新运行时依赖。
 
 本工具的设计目标是：
 
@@ -124,6 +126,22 @@ npm -v
 
 npm install -g @github/copilot
 ```
+
+#### macOS：通过 Homebrew 安装 Node（推荐方式之一）
+
+macOS 上最简单的方式是用 Homebrew 安装 Node，再安装 Copilot CLI：
+
+```bash
+brew install node
+npm install -g @github/copilot
+```
+
+也可以使用上面的 nvm 方案（与 Linux 相同）。安装脚本只会**检测并提示**，不会自动安装 Homebrew / Node / npm / Copilot CLI。
+
+### 3.2 其他系统命令
+
+- `script`：`cmd-record` 依赖它。Linux 通常来自 util-linux；macOS 系统自带。缺失时 `cmd-record` 不可用，但不影响其它命令。
+- `crontab`：`cmd-trash-auto-on/off/status` 依赖它。Linux 一般自带；macOS 也有，但首次使用可能需要在「系统设置 → 隐私与安全性 → 完全磁盘访问」授权 `cron`。缺失时定时清理不可用，可改用手动 `cmd-trash-prune`。
 
 ---
 
@@ -1067,6 +1085,15 @@ cmd "请分析最近 cmd-record 日志中的第一个关键错误"
 
 注意：如果没有使用 `cmd-record`、`cmd-run`、`tee` 或手动粘贴报错，普通脚本无法事后读取已经滚过屏幕的终端输出。
 
+### 14.1 平台差异（Linux vs macOS）
+
+`cmd-record` 在不同平台调用的 `script` 实现不同，已自动处理：
+
+- **Linux**：使用 util-linux 版 `script`，调用 `script -q -f <log> -c "$SHELL -i"`，可指定要运行的命令。
+- **macOS**：使用系统自带的 BSD 版 `script`（不支持 `-f` / `-c`），调用 `script -q <log>`。它会启动一个交互式 shell（你的 `$SHELL`，默认 zsh）并记录整个会话，输入 `exit` 结束。
+
+两个平台保存的日志位置一致（`~/.cache/copilot-cmd/records/`），后续 `cmd "..."` 的分析方式也一致。
+
 ---
 
 ## 15. `cmd-suggest`：推荐可继续提问的问题
@@ -1281,6 +1308,15 @@ cmd-trash-auto-status
 ```bash
 cmd-trash-auto-off
 ```
+
+> 平台说明：定时清理依赖 `crontab`。
+> - Linux 一般自带 `crontab`。
+> - macOS 也有 `crontab`，但 `cron` 首次运行可能需要在「系统设置 → 隐私与安全性 → 完全磁盘访问」中授权。
+> - 如果系统没有 `crontab`，`cmd-trash-auto-on/off` 会给出清晰错误并退出，`cmd-trash-auto-status` 会提示不可用。此时请改用手动清理：
+>
+> ```bash
+> cmd-trash-prune 30 all
+> ```
 
 ---
 
