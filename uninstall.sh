@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "== cmd-helper uninstaller =="
+echo "== cmd-helper 卸载器 =="
 echo
 
 BIN_LIST="
@@ -32,29 +32,28 @@ copilot-cmd-send
 for f in $BIN_LIST; do
   if [ -f "$HOME/.local/bin/$f" ]; then
     rm -f "$HOME/.local/bin/$f"
-    echo "Removed: ~/.local/bin/$f"
+    echo "已删除: ~/.local/bin/$f"
   fi
 done
 
-if [ -f "$HOME/.local/lib/copilot-cmd-env.sh" ]; then
-  rm -f "$HOME/.local/lib/copilot-cmd-env.sh"
-  echo "Removed: ~/.local/lib/copilot-cmd-env.sh"
-fi
+LIB_LIST="
+copilot-cmd-platform.sh
+copilot-cmd-env.sh
+copilot-cmd-context.sh
+copilot-cmd-ui.sh
+"
 
-if [ -f "$HOME/.local/lib/copilot-cmd-context.sh" ]; then
-  rm -f "$HOME/.local/lib/copilot-cmd-context.sh"
-  echo "Removed: ~/.local/lib/copilot-cmd-context.sh"
-fi
-
-if [ -f "$HOME/.local/lib/copilot-cmd-ui.sh" ]; then
-  rm -f "$HOME/.local/lib/copilot-cmd-ui.sh"
-  echo "Removed: ~/.local/lib/copilot-cmd-ui.sh"
-fi
+for f in $LIB_LIST; do
+  if [ -f "$HOME/.local/lib/$f" ]; then
+    rm -f "$HOME/.local/lib/$f"
+    echo "已删除: ~/.local/lib/$f"
+  fi
+done
 
 echo
-echo "Scripts removed."
+echo "脚本已删除。"
 echo
-read -r -p "Remove user config and cache? This includes API key template/config, sessions, logs. Type yes to remove: " ans
+read -r -p "是否删除用户配置和缓存？这包括 API key 模板/配置、session、日志。输入 yes 删除：" ans
 
 if [ "$ans" = "yes" ]; then
   rm -rf "$HOME/.config/copilot-deepseek"
@@ -63,9 +62,15 @@ if [ "$ans" = "yes" ]; then
   rm -rf "$HOME/.copilot-cmd"
   rm -rf "$HOME/.copilot-cmd-trash"
   rm -rf "$HOME/.cache/copilot-cmd-trash"
-  echo "Removed config/cache/session directories."
+  echo "已删除配置/缓存/session 目录。"
 else
-  echo "Kept config/cache/session directories."
+  echo "已保留配置/缓存/session 目录。"
 fi
 
-echo "Uninstall completed."
+echo
+echo "注意：PATH 配置行不会被自动删除。"
+echo "如果想清理，请手动检查以下文件中是否有这一行："
+echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+echo "  ~/.profile  ~/.bashrc  ~/.bash_profile  ~/.zprofile  ~/.zshrc"
+echo
+echo "卸载完成。"

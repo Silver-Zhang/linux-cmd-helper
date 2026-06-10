@@ -4,7 +4,13 @@ set -euo pipefail
 DAYS="${1:-30}"
 
 if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
-  echo "Usage: cmd-trash-auto-on [days]" >&2
+  echo "用法：cmd-trash-auto-on [天数]" >&2
+  exit 1
+fi
+
+if ! command -v crontab >/dev/null 2>&1; then
+  echo "未找到 crontab，本系统上无法使用定时清理回收站功能。" >&2
+  echo "你仍可手动清理：cmd-trash-prune [天数] [sessions|cache|all]" >&2
   exit 1
 fi
 
@@ -24,6 +30,6 @@ crontab -l 2>/dev/null | sed "/$MARK_BEGIN/,/$MARK_END/d" > "$TMP" || true
   echo "$MARK_END"
 } | crontab -
 
-echo "Enabled cmd trash auto prune:"
-echo "  keep days: $DAYS"
-echo "  schedule: daily at 03:30"
+echo "已开启回收站定时清理："
+echo "  保留天数: $DAYS"
+echo "  计划: 每天 03:30"

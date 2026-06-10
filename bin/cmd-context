@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
+
 BASE="$HOME/.cache/copilot-cmd"
 TS="$(date '+%Y%m%d-%H%M%S')"
 DIR="$BASE/contexts/$TS"
@@ -62,7 +65,7 @@ mkdir -p "$DIR"
   echo
 
   if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
-    RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+    RUN_DIR="$(resolve_path "$BASE/last-run" 2>/dev/null || true)"
     if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
       echo "## Latest cmd-run"
       echo "path: $RUN_DIR"
@@ -85,7 +88,7 @@ mkdir -p "$DIR"
   fi
 
   if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
-    REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+    REC_DIR="$(resolve_path "$BASE/last-record" 2>/dev/null || true)"
     if [ -n "$REC_DIR" ] && [ -d "$REC_DIR" ]; then
       echo "## Latest cmd-record"
       echo "path: $REC_DIR"

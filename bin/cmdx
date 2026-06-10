@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
+# shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-context.sh"
@@ -352,7 +354,7 @@ HEADER
       echo
       echo "## Latest cmd-run"
       if [ -L "$BASE/last-run" ] || [ -d "$BASE/last-run" ]; then
-        RUN_DIR="$(readlink -f "$BASE/last-run" 2>/dev/null || true)"
+        RUN_DIR="$(resolve_path "$BASE/last-run" 2>/dev/null || true)"
         echo "last-run: ${RUN_DIR:-none}"
         if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/meta.txt" ]; then
           echo '```text'
@@ -371,7 +373,7 @@ HEADER
       echo
       echo "## Latest cmd-record"
       if [ -L "$BASE/last-record" ] || [ -d "$BASE/last-record" ]; then
-        REC_DIR="$(readlink -f "$BASE/last-record" 2>/dev/null || true)"
+        REC_DIR="$(resolve_path "$BASE/last-record" 2>/dev/null || true)"
         echo "last-record: ${REC_DIR:-none}"
         if [ -n "${REC_DIR:-}" ] && [ -f "$REC_DIR/meta.txt" ]; then
           echo '```text'

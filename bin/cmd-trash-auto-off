@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ! command -v crontab >/dev/null 2>&1; then
+  echo "未找到 crontab，本系统上无法使用定时清理回收站功能。" >&2
+  echo "无需关闭。" >&2
+  exit 1
+fi
+
 MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
 MARK_END="# END COPILOT-CMD-TRASH-AUTO"
 
@@ -10,4 +16,4 @@ trap 'rm -f "$TMP"' EXIT
 crontab -l 2>/dev/null | sed "/$MARK_BEGIN/,/$MARK_END/d" > "$TMP" || true
 crontab "$TMP"
 
-echo "Disabled cmd trash auto prune."
+echo "已关闭回收站定时清理。"
