@@ -1566,6 +1566,11 @@ cmd "问题" | glow -        # 可配合 glow 渲染 Markdown
 
 `glow` 不是本项目依赖，但用户可自行安装使用。
 
+### 中止正在进行的调用
+
+`cmd` / `cmdx` / `cmd-git` 等待模型响应期间，可以按 `Ctrl+C` 中止，也可以用
+`kill`（SIGTERM）结束进程。中止时后台 spinner 会被回收、终端光标会被恢复。
+
 ---
 
 ## 24. 常见问题
@@ -1682,6 +1687,26 @@ cmd "问题"
 ```bash
 cmd-chat
 ```
+
+---
+
+### 24.7 看到 `model call failed (exit N)`
+
+模型调用失败时会把 GitHub Copilot CLI 的原始输出完整打印出来，形如：
+
+```text
+[model call failed (exit 1)]
+ERROR: ...CLI 的原始报错...
+[error] 模型调用失败（退出码 1）。上面是 CLI 的原始输出，常见原因见 README 第 24 节。
+```
+
+这段原始输出通常已经说明了原因，最常见的是 24.3（DeepSeek key 未配置或失效）
+和 24.4（GitHub Copilot native 未登录）。
+
+`cmd` / `cmdx` / `cmd-git` 会以 CLI 的退出码退出，因此脚本里可以直接用 `$?` 判断成功与否。
+
+> 说明：`cmdx` 的失败虽然不影响「已经执行过的命令」的结果，但
+> `cmdx --loop` 会在某一轮模型调用失败时中止整个 loop。
 
 ---
 

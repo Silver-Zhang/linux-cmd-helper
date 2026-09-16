@@ -68,6 +68,23 @@ Security:
   the feature as enabled, and reads the crontab once instead of three times.
 - `cmd-trash-auto-on` now writes the absolute path reported by `command -v cmd-trash-prune`
   rather than hardcoding `~/.local/bin`, and refuses to install a cron entry that could not run.
+- `cmd`, `cmdx` and `cmd-git` no longer exit silently when the model call fails. Because the call
+  site ran under `set -e`, a non-zero return exited the script before the response file was
+  printed: the user saw only an exit code while the CLI's error message sat unread in a temp file.
+  The failure is now captured, the CLI output is printed to stderr, and the CLI's exit code is
+  returned. `cmdx --loop` reports which round failed before stopping.
+- The terminal cursor is no longer left hidden after a failed or interrupted model call.
+  `lib/copilot-cmd-ui.sh` installed its cleanup with `trap ... EXIT INT TERM`, but every script
+  then replaced the EXIT trap with its own, so the spinner was never stopped on abnormal exit and
+  the `\033[?25l` that hides the cursor had no matching `\033[?25h`.
+- `Ctrl+C` and `SIGTERM` now actually interrupt `cmd` / `cmdx` / `cmd-git`. Because the UI library
+  trapped `INT` and `TERM`, those signals were swallowed and a hung model call could not be
+  aborted. The library now traps `EXIT` only — bash still runs the EXIT trap when the shell dies
+  from an untrapped signal, so cleanup is preserved — and exposes `ui_on_exit`, which callers use
+  to register cleanup instead of overwriting the trap.
+- Fix `printf: --: invalid option` on the non-TTY / `CMD_PLAIN` output path. The format strings in
+  `ui_cmd_block` and `ui_round_header` begin with `---`, which bash's `printf` parses as options.
+  This made `cmdx "..." | tee log` and `cmdx --loop` print an error instead of the command block.
 
 - Prepare the project for open-source release.
 
