@@ -192,6 +192,27 @@ README
 
 如果 API Key 曾经被粘贴到聊天窗口、截图、共享文件或公共目录，应视为已经泄露，需要到 DeepSeek 控制台重置。
 
+### 4.1 自定义 DeepSeek 模型名
+
+DeepSeek 上游的模型名会随时间变化。脚本内不再写死模型名，而是读取下面两个变量（都带内置默认值）：
+
+```bash
+CMD_DEEPSEEK_FLASH_MODEL   # 默认 deepseek-flash
+CMD_DEEPSEEK_PRO_MODEL     # 默认 deepseek-v4-pro
+```
+
+如果上游再次改名，或者你想固定到某个特定版本，直接在同一个配置文件里覆盖即可，**不需要修改任何脚本**：
+
+```bash
+cat >> ~/.config/copilot-deepseek/env <<'EOF'
+export CMD_DEEPSEEK_FLASH_MODEL='deepseek-flash'
+EOF
+```
+
+当前生效的模型名可以用 `cmd-model-current` 查看。
+
+注意：`cmd -m <模型ID>` 这种显式指定形式不经过这两个变量，会原样透传给 DeepSeek。
+
 ---
 
 ## 5. 上下文模式
@@ -239,7 +260,7 @@ cmd "只回答 OK"
 
 ```text
 DeepSeek BYOK
-deepseek-v4-flash
+deepseek-flash
 ```
 
 适合日常命令解释、简单排错、生成只读检查命令。

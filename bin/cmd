@@ -36,7 +36,7 @@ EOF
     cmd -m flash "问题"
     cmd -m pro "问题"
     cmd --deepseek -m deepseek-v4-pro "问题"
-    cmd --deepseek -m deepseek-v4-flash "问题"
+    cmd --deepseek -m deepseek-flash "问题"
 
   GitHub Copilot 原生模型：
     cmd --copilot "问题"
@@ -175,10 +175,10 @@ if [ "$BACKEND" = "deepseek" ]; then
 
   case "$MODEL" in
     ""|flash)
-      export COPILOT_MODEL='deepseek-v4-flash'
+      export COPILOT_MODEL="$CMD_DEEPSEEK_FLASH_MODEL"
       ;;
     pro)
-      export COPILOT_MODEL='deepseek-v4-pro'
+      export COPILOT_MODEL="$CMD_DEEPSEEK_PRO_MODEL"
       ;;
     *)
       export COPILOT_MODEL="$MODEL"

@@ -380,12 +380,14 @@ COPILOT_PROVIDER_TYPE='anthropic'
 COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
 COPILOT_PROVIDER_API_KEY
 COPILOT_MODEL
+CMD_DEEPSEEK_FLASH_MODEL
+CMD_DEEPSEEK_PRO_MODEL
 ```
 
 默认模型：
 
 ```text
-deepseek-v4-flash
+deepseek-flash
 ```
 
 Pro 模型：
@@ -393,6 +395,11 @@ Pro 模型：
 ```text
 deepseek-v4-pro
 ```
+
+DeepSeek 上游模型名只在 `lib/copilot-cmd-env.sh` 中定义一次，其余脚本一律引用
+`CMD_DEEPSEEK_FLASH_MODEL` / `CMD_DEEPSEEK_PRO_MODEL`。
+不要在 bin 脚本里重新写死模型名字面量；上游改名时，用户可在
+`~/.config/copilot-deepseek/env` 中覆盖这两个变量，无需修改仓库。
 
 用户密钥位置：
 
