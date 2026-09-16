@@ -39,6 +39,12 @@ Security:
 ### Changed
 - Improve separation between model info, question preview, AI response, command approval, and execution output.
 - `cmdx --loop` now displays clear round headers for each iteration.
+- Update the default DeepSeek Flash model to `deepseek-flash` (upstream renamed it from
+  `deepseek-v4-flash`; the old name still resolves but is now an alias). `deepseek-v4-pro` is unchanged.
+- DeepSeek model names are no longer hardcoded in each script. They are defined once in
+  `lib/copilot-cmd-env.sh` as `CMD_DEEPSEEK_FLASH_MODEL` / `CMD_DEEPSEEK_PRO_MODEL`, and every
+  `bin/` script now references those variables. Users can override them from
+  `~/.config/copilot-deepseek/env` without touching the repository.
 
 ### Fixed
 - `uninstall.sh` now removes `cmd-new`, `cmd-resume`, and all installed `lib/copilot-cmd-*.sh` helpers (previously only `copilot-cmd-env.sh` was removed).

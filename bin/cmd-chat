@@ -86,10 +86,10 @@ if [ "$BACKEND" = "deepseek" ]; then
 
   case "$MODEL" in
     ""|flash)
-      export COPILOT_MODEL='deepseek-v4-flash'
+      export COPILOT_MODEL="$CMD_DEEPSEEK_FLASH_MODEL"
       ;;
     pro)
-      export COPILOT_MODEL='deepseek-v4-pro'
+      export COPILOT_MODEL="$CMD_DEEPSEEK_PRO_MODEL"
       ;;
     *)
       export COPILOT_MODEL="$MODEL"
