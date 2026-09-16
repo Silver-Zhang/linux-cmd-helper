@@ -1,19 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-trash.sh"
+
 if ! command -v crontab >/dev/null 2>&1; then
   echo "未找到 crontab，本系统上无法使用定时清理回收站功能。" >&2
   echo "无需关闭。" >&2
   exit 1
 fi
 
-MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
-MARK_END="# END COPILOT-CMD-TRASH-AUTO"
+if ! cmd_trash_crontab_read; then
+  exit 1
+fi
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+case "$(cmd_trash_mark_state)" in
+  none)
+    echo "回收站定时清理本来就没有开启，无需关闭。"
+    exit 0
+    ;;
+  broken)
+    echo "错误：crontab 中的标记块不完整，已中止，未做任何修改。" >&2
+    echo "请先执行 crontab -l 检查下面两行是否成对出现，手工修复后重试：" >&2
+    echo "  $CMD_TRASH_MARK_BEGIN" >&2
+    echo "  $CMD_TRASH_MARK_END" >&2
+    exit 1
+    ;;
+esac
 
-crontab -l 2>/dev/null | sed "/$MARK_BEGIN/,/$MARK_END/d" > "$TMP" || true
-crontab "$TMP"
+REMAINING="$(cmd_trash_crontab_strip)"
+
+if cmd_trash_crontab_is_empty "$REMAINING"; then
+  # 除了标记块之外没有别的内容，直接移除整份 crontab。
+  # 比给 crontab 写入空文件更明确：不同实现对空输入的处理并不一致。
+  crontab -r 2>/dev/null || true
+else
+  printf '%s\n' "$REMAINING" | crontab -
+fi
 
 echo "已关闭回收站定时清理。"

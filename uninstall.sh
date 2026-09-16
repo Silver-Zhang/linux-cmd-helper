@@ -41,6 +41,7 @@ copilot-cmd-platform.sh
 copilot-cmd-env.sh
 copilot-cmd-context.sh
 copilot-cmd-ui.sh
+copilot-cmd-trash.sh
 "
 
 for f in $LIB_LIST; do

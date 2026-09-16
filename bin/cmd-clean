@@ -24,6 +24,12 @@ move_dir() {
   echo
 
   mv "$src" "$target"
+
+  # mv 会保留目录原有的 mtime，而 cmd-trash-prune 是按 -mtime 判断保留期的。
+  # 不重置的话，「移入回收站前就已经超过保留期」的目录会在下一次 prune
+  # （通常是每日 cron）被立即永久删除，回收站等于完全没有缓冲作用。
+  # 这里把 mtime 重置为移入时刻，让保留期从「进入回收站」开始计算。
+  touch "$target"
 }
 
 clean_sessions() {

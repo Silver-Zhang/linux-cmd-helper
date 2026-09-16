@@ -1302,6 +1302,9 @@ cmd-trash-prune 7
 cmd-trash-prune 90
 ```
 
+> 保留期从「内容移入回收站」的那一刻开始计算，而不是从它原本的修改时间开始计算。
+> `cmd-clean` 在移入时会重置时间戳，因此刚清理掉的内容一定会保留完整的 N 天。
+
 ---
 
 ### 17.2 定时清理回收站
@@ -1329,6 +1332,11 @@ cmd-trash-auto-status
 ```bash
 cmd-trash-auto-off
 ```
+
+> 标记块说明：定时任务写在 `# BEGIN COPILOT-CMD-TRASH-AUTO` 与
+> `# END COPILOT-CMD-TRASH-AUTO` 之间。如果 crontab 里只出现了其中一行
+> （例如手工编辑过，或上次写入中断），三个 `cmd-trash-auto-*` 命令都会拒绝操作并提示你先手工修复，
+> 以免误删你自己写在标记块之后的其它定时任务。
 
 > 平台说明：定时清理依赖 `crontab`。
 > - Linux 一般自带 `crontab`。
@@ -1414,7 +1422,11 @@ cmd-chat
   cmd-helper 命令脚本
 
 ~/.local/lib/
-  copilot-cmd-env.sh
+  copilot-cmd-platform.sh   跨平台公共函数
+  copilot-cmd-env.sh        后端环境与模型名
+  copilot-cmd-context.sh    上下文拼装
+  copilot-cmd-ui.sh         终端 UI
+  copilot-cmd-trash.sh      回收站定时清理（crontab）
 
 ~/.config/copilot-deepseek/env
   用户自己的 DeepSeek API Key
