@@ -53,7 +53,8 @@ USAGE
 
 BASE="$HOME/.cache/copilot-cmd"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+# 用 ui_on_exit 而不是直接写 trap：直接写会覆盖掉 UI 库的 spinner/光标清理。
+ui_on_exit 'rm -rf "$TMP_DIR"'
 
 USER_INPUT="$TMP_DIR/user_input.txt"
 PROMPT_FILE="$TMP_DIR/prompt.txt"
@@ -529,6 +530,9 @@ LOOP_SYSTEM
 
     # Send prompt to AI
     ui_spinner_start "Waiting for model response..."
+    # 见 bin/cmd 中的同类注释：set -e 下必须用 `|| rc=$?` 捕获失败，
+    # 否则脚本会静默退出，错误信息永远打不出来。
+    ROUND_RC=0
     if ! copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
         "${COPILOT_EXTRA_ARGS[@]}" \
         --deny-tool='shell(*)' \
@@ -536,13 +540,16 @@ LOOP_SYSTEM
       copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
         "${COPILOT_EXTRA_ARGS[@]}" \
         --deny-tool='shell' \
-        --deny-tool='write' > "$ROUND_RESPONSE" 2>&1
+        --deny-tool='write' > "$ROUND_RESPONSE" 2>&1 || ROUND_RC=$?
     fi
     ui_spinner_stop
 
-    ui_ai_begin
-    cat "$ROUND_RESPONSE"
-    ui_ai_end
+    ui_model_reply "$ROUND_RESPONSE" "$ROUND_RC"
+
+    if [ "$ROUND_RC" -ne 0 ]; then
+      ui_error "loop 第 $ROUND 轮模型调用失败，已中止。"
+      exit "$ROUND_RC"
+    fi
 
     # Extract commands
     awk '
@@ -717,6 +724,7 @@ fi
 # 4. 第一轮：让 AI 判断是否需要命令
 # -----------------------------
 ui_spinner_start "Waiting for model response..."
+RESPONSE_RC=0
 if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
     --deny-tool='shell(*)' \
@@ -724,13 +732,15 @@ if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
   copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
     --deny-tool='shell' \
-    --deny-tool='write' > "$RESPONSE_FILE" 2>&1
+    --deny-tool='write' > "$RESPONSE_FILE" 2>&1 || RESPONSE_RC=$?
 fi
 ui_spinner_stop
 
-ui_ai_begin
-cat "$RESPONSE_FILE"
-ui_ai_end
+ui_model_reply "$RESPONSE_FILE" "$RESPONSE_RC"
+
+if [ "$RESPONSE_RC" -ne 0 ]; then
+  exit "$RESPONSE_RC"
+fi
 
 awk '
   /^__CMDX_BEGIN__$/ {flag=1; next}
@@ -885,6 +895,7 @@ HEADER
 ui_spinner_start "Waiting for follow-up analysis..."
 
 FOLLOW_RESPONSE="$TMP_DIR/followup_response.txt"
+FOLLOW_RC=0
 if ! copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
   "${COPILOT_EXTRA_ARGS[@]}" \
   --deny-tool='shell(*)' \
@@ -892,14 +903,12 @@ if ! copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
   copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
     "${COPILOT_EXTRA_ARGS[@]}" \
     --deny-tool='shell' \
-    --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1
+    --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1 || FOLLOW_RC=$?
 fi
 
 ui_spinner_stop
 
-_UI_CURRENT_SECTION="follow-up analysis"
-ui_section "follow-up analysis"
-cat "$FOLLOW_RESPONSE"
-ui_section_end
+ui_model_reply "$FOLLOW_RESPONSE" "$FOLLOW_RC" "follow-up analysis"
 
+# 退出码仍然沿用已执行命令的结果：命令本身跑成功了，不该因为后续分析失败而变成失败。
 exit "$RC"

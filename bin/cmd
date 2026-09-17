@@ -64,7 +64,8 @@ USAGE
 
 BASE="$HOME/.cache/copilot-cmd"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+# 用 ui_on_exit 而不是直接写 trap：直接写会覆盖掉 UI 库的 spinner/光标清理。
+ui_on_exit 'rm -rf "$TMP_DIR"'
 
 USER_INPUT="$TMP_DIR/user_input.txt"
 PROMPT_FILE="$TMP_DIR/prompt.txt"
@@ -432,12 +433,13 @@ _cmd_call_copilot() {
   fi
 }
 
-_cmd_call_copilot
-_CMD_RC=$?
+# 不能写成 `_cmd_call_copilot; _CMD_RC=$?`：set -e 会在函数返回非 0 时直接退出脚本，
+# 后面的 spinner 收尾、错误输出和 exit 都不会执行，用户只看到一个退出码，
+# 而 CLI 的错误信息其实就在 $AI_RESPONSE_FILE 里躺着。
+_CMD_RC=0
+_cmd_call_copilot || _CMD_RC=$?
 ui_spinner_stop
 
-ui_ai_begin
-cat "$AI_RESPONSE_FILE"
-ui_ai_end
+ui_model_reply "$AI_RESPONSE_FILE" "$_CMD_RC"
 
 exit "$_CMD_RC"

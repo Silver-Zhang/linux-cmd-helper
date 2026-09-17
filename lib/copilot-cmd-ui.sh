@@ -201,9 +201,11 @@ ui_cmd_block() {
     done
     printf '%s╰%s╯%s\n' "${_C_BOLD_YELLOW}" "$(printf '%0.s─' $(seq 1 $(( _UI_WIDTH )) ))" "${_C_RESET}" >&2
   else
-    printf '--- proposed commands ---\n' >&2
+    # 格式串以 `-` 开头时必须加 `--`，否则 bash 的 printf 会把它当成选项并报
+    # "printf: --: 无效的选项"。这里只在非 TTY / CMD_PLAIN 下才会走到，容易被忽略。
+    printf -- '--- proposed commands ---\n' >&2
     nl -ba "$file" >&2
-    printf '--- end commands ---\n' >&2
+    printf -- '--- end commands ---\n' >&2
   fi
   printf '\n' >&2
 }
@@ -232,7 +234,8 @@ ui_round_header() {
     printf '%sRound %d/%d%s\n' "${_C_BOLD_MAGENTA}" "$round" "$max" "${_C_RESET}" >&2
     printf '%s━%s%s\n' "${_C_BOLD_MAGENTA}" "$(printf '%0.s━' $(seq 1 $(( _UI_WIDTH )) ))" "${_C_RESET}" >&2
   else
-    printf '--- Round %d/%d ---\n' "$round" "$max" >&2
+    # 同上：格式串以 `-` 开头，必须加 `--`
+    printf -- '--- Round %d/%d ---\n' "$round" "$max" >&2
   fi
   printf '\n' >&2
 }
@@ -280,8 +283,77 @@ ui_spinner_stop() {
   fi
 }
 
-# Trap to clean up spinner on exit
-_ui_cleanup() {
+# ─── 退出清理钩子 ─────────────────────────────────────────────────────────────
+
+_UI_EXIT_HOOKS=""
+
+# 依次执行 spinner 收尾和调用方注册的清理命令。
+_ui_run_exit_hooks() {
+  # 先停 spinner：它会恢复被隐藏的光标
   ui_spinner_stop
+  if [ -n "$_UI_EXIT_HOOKS" ]; then
+    # shellcheck disable=SC2294
+    eval "$_UI_EXIT_HOOKS"
+  fi
+  return 0
 }
-trap '_ui_cleanup' EXIT INT TERM
+
+# ui_on_exit <命令>
+# 注册脚本退出时要执行的清理命令，可以多次调用（先注册的先执行）。
+#
+# 请用它代替直接写 `trap '...' EXIT`，原因有两个：
+#
+#   1. 直接写 `trap ... EXIT` 会覆盖掉本库的清理，导致脚本异常退出时后台 spinner
+#      不被回收、终端光标停留在隐藏状态（\033[?25l 之后没有 \033[?25h）。
+#
+#   2. 本库刻意**只捕获 EXIT，不捕获 INT/TERM**。捕获 INT/TERM 会让 SIGINT/SIGTERM
+#      （含 Ctrl-C）被吞掉，脚本不会中断——用户就没法中止一个卡住的模型调用。
+#      不捕获时 bash 会因信号退出，而 EXIT trap 依然会执行，清理不会丢。
+ui_on_exit() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || return 1
+
+  if [ -n "$_UI_EXIT_HOOKS" ]; then
+    # 用换行分隔，这样调用方可以注册多行命令
+    _UI_EXIT_HOOKS="${_UI_EXIT_HOOKS}
+${cmd}"
+  else
+    _UI_EXIT_HOOKS="$cmd"
+  fi
+  trap '_ui_run_exit_hooks' EXIT
+}
+
+# ─── 模型返回内容的呈现 ───────────────────────────────────────────────────────
+
+# ui_model_reply <输出文件> <退出码> [成功时的区块标题]
+#
+# 成功时按原有格式把内容打到 stdout（保持可管道）；
+# 失败时把 CLI 的原始输出打到 stderr 并明确报错——失败时 $file 里通常就是
+# 认证失败、模型名不可用之类的错误信息，不打印出来用户只会看到一个退出码。
+ui_model_reply() {
+  local file="$1" rc="$2" title="${3:-answer}"
+
+  printf '\n' >&2
+
+  if [ ! -s "$file" ]; then
+    ui_error "模型调用没有产生任何输出（退出码 ${rc}）。"
+    printf '\n' >&2
+    return 0
+  fi
+
+  if [ "$rc" -eq 0 ]; then
+    _UI_CURRENT_SECTION="$title"
+    ui_section "$title"
+    cat "$file"
+    ui_section_end
+  else
+    _UI_CURRENT_SECTION="model call failed"
+    ui_section "model call failed (exit ${rc})"
+    cat "$file" >&2
+    ui_section_end
+    printf '\n' >&2
+    ui_error "模型调用失败（退出码 ${rc}）。上面是 CLI 的原始输出，常见原因见 README 第 24 节。"
+  fi
+
+  printf '\n' >&2
+}
