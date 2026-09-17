@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-platform.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+cmd_init_runtime
 
 usage() {
   cat <<'USAGE'
@@ -87,15 +89,12 @@ set -- "${ARGS[@]}"
 COPILOT_EXTRA_ARGS=()
 
 if [ "$BACKEND" = "deepseek" ]; then
+  cmd_require_deepseek_key || exit 1
+
   export COPILOT_PROVIDER_TYPE='anthropic'
   export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
   export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
   export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
-
-  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
-    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
-    exit 1
-  fi
 
   case "$MODEL" in
     ""|flash)
@@ -123,6 +122,11 @@ elif [ "$BACKEND" = "copilot" ]; then
 
 else
   echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "错误：未找到 copilot 命令，请先安装 GitHub Copilot CLI。" >&2
   exit 1
 fi
 
@@ -208,6 +212,6 @@ echo "" >&2
 # 不传 --continue：始终新建 session。
 # 后续 cmd/cmdx/cmd-chat 的 --continue 会进入这条最新 session。
 copilot -p "$(cat "$PROMPT_FILE")" \
-  "${COPILOT_EXTRA_ARGS[@]}" \
+  "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
   --deny-tool='shell(*)' \
   --deny-tool='write'

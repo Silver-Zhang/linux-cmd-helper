@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-platform.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+cmd_init_runtime
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-context.sh"
 # shellcheck disable=SC1090
@@ -177,15 +179,12 @@ set -- "${ARGS[@]}"
 # 0.1 设置模型后端
 # -----------------------------
 if [ "$BACKEND" = "deepseek" ]; then
+  cmd_require_deepseek_key || exit 1
+
   export COPILOT_PROVIDER_TYPE='anthropic'
   export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
   export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
   export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
-
-  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
-    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
-    exit 1
-  fi
 
   case "$MODEL" in
     ""|flash)
@@ -216,6 +215,11 @@ elif [ "$BACKEND" = "copilot" ]; then
 
 else
   echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+if ! command -v copilot-cmd-send >/dev/null 2>&1; then
+  echo "错误：未找到 copilot-cmd-send，请重新安装 cmd-helper。" >&2
   exit 1
 fi
 
@@ -534,11 +538,11 @@ LOOP_SYSTEM
     # 否则脚本会静默退出，错误信息永远打不出来。
     ROUND_RC=0
     if ! copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
-        "${COPILOT_EXTRA_ARGS[@]}" \
+        "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
         --deny-tool='shell(*)' \
         --deny-tool='write' > "$ROUND_RESPONSE" 2>&1; then
       copilot-cmd-send --prompt-file "$CURRENT_PROMPT" -- \
-        "${COPILOT_EXTRA_ARGS[@]}" \
+        "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
         --deny-tool='shell' \
         --deny-tool='write' > "$ROUND_RESPONSE" 2>&1 || ROUND_RC=$?
     fi
@@ -726,11 +730,11 @@ fi
 ui_spinner_start "Waiting for model response..."
 RESPONSE_RC=0
 if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
-    "${COPILOT_EXTRA_ARGS[@]}" \
+    "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
     --deny-tool='shell(*)' \
     --deny-tool='write' > "$RESPONSE_FILE" 2>&1; then
   copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
-    "${COPILOT_EXTRA_ARGS[@]}" \
+    "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
     --deny-tool='shell' \
     --deny-tool='write' > "$RESPONSE_FILE" 2>&1 || RESPONSE_RC=$?
 fi
@@ -897,11 +901,11 @@ ui_spinner_start "Waiting for follow-up analysis..."
 FOLLOW_RESPONSE="$TMP_DIR/followup_response.txt"
 FOLLOW_RC=0
 if ! copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
-  "${COPILOT_EXTRA_ARGS[@]}" \
+  "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
   --deny-tool='shell(*)' \
   --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1; then
   copilot-cmd-send --prompt-file "$FOLLOW_PROMPT" -- \
-    "${COPILOT_EXTRA_ARGS[@]}" \
+    "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
     --deny-tool='shell' \
     --deny-tool='write' > "$FOLLOW_RESPONSE" 2>&1 || FOLLOW_RC=$?
 fi

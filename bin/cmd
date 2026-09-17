@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-platform.sh"
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+cmd_init_runtime
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-context.sh"
 # shellcheck disable=SC1090
@@ -163,16 +165,12 @@ set -- "${ARGS[@]}"
 COPILOT_EXTRA_ARGS=()
 
 if [ "$BACKEND" = "deepseek" ]; then
+  cmd_require_deepseek_key || exit 1
+
   export COPILOT_PROVIDER_TYPE='anthropic'
   export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
   export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
   export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
-
-  # COPILOT_PROVIDER_API_KEY 来自 ~/.config/copilot-deepseek/env
-  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
-    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
-    exit 1
-  fi
 
   case "$MODEL" in
     ""|flash)
@@ -206,6 +204,11 @@ elif [ "$BACKEND" = "copilot" ]; then
 
 else
   echo "Error: unknown backend: $BACKEND" >&2
+  exit 1
+fi
+
+if ! command -v copilot-cmd-send >/dev/null 2>&1; then
+  echo "错误：未找到 copilot-cmd-send，请重新安装 cmd-helper。" >&2
   exit 1
 fi
 
@@ -422,12 +425,12 @@ ui_spinner_start "Waiting for model response..."
 
 _cmd_call_copilot() {
   if ! copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
-    "${COPILOT_EXTRA_ARGS[@]}" \
+    "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
     --deny-tool='shell(*)' \
     --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1; then
     # Retry with alternate deny-tool syntax
     copilot-cmd-send --prompt-file "$PROMPT_FILE" -- \
-      "${COPILOT_EXTRA_ARGS[@]}" \
+      "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}" \
       --deny-tool='shell' \
       --deny-tool='write' > "$AI_RESPONSE_FILE" 2>&1
   fi

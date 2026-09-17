@@ -32,6 +32,7 @@
 | `cmd-run`               | 执行单条命令并保存日志                                          |
 | `cmd-record`            | 开启一个被记录的 shell 会话，保存后续输出                             |
 | `cmd-suggest`           | 根据当前上下文和日志推荐可继续提问的问题                                 |
+| `cmd-version`           | 查看已安装版本、安装路径和运行时依赖                                  |
 | `cmd-clean`             | 清理 cmd session/cache，但移动到回收站                         |
 | `cmd-trash-list`        | 查看回收站内容                                              |
 | `cmd-trash-empty`       | 手动永久清空回收站                                            |
@@ -209,7 +210,7 @@ export CMD_DEEPSEEK_FLASH_MODEL='deepseek-flash'
 EOF
 ```
 
-当前生效的模型名可以用 `cmd-model-current` 查看。
+`cmd-model-current` 会读取这两个变量的当前值，但不会执行 DeepSeek 配置文件中的其它命令。
 
 注意：`cmd -m <模型ID>` 这种显式指定形式不经过这两个变量，会原样透传给 DeepSeek。
 
@@ -844,6 +845,8 @@ cmd "问题"
 ## 10. GitHub Copilot native 模型
 
 默认情况下，`cmd` 和 `cmdx` 使用 DeepSeek。若要使用 GitHub Copilot 原生模型，需要先完成 native 认证。
+
+`--copilot` 和 `--help` 不需要 DeepSeek API Key；没有配置 `~/.config/copilot-deepseek/env` 也可以使用 native 后端。
 
 ### 10.1 进入 cmd 专用 native Copilot 环境并选择模型
 
@@ -1515,6 +1518,14 @@ bash /data/public/tools/linux-cmd-helper/uninstall.sh
 
 卸载时会询问是否删除用户配置、session 和 cache。若选择保留，则 API Key、日志、session 不会删除。
 
+为避免误删用户数据，只有明确输入以下强确认短语才会删除：
+
+```text
+YES I UNDERSTAND
+```
+
+EOF 或其它输入都会保留用户配置、session 和 cache。
+
 ---
 
 ## 22. 安全注意事项
@@ -1731,30 +1742,26 @@ ERROR: ...CLI 的原始报错...
 
 ```bash
 PUB="/data/public/tools/linux-cmd-helper"
+PKG_DIR="$(pwd)"
 
 mkdir -p "$PUB/bin" "$PUB/lib" "$PUB/config"
 
-for f in \
-  cmd cmdx cmd-chat cmd-context cmd-run cmd-record cmd-suggest cmd-clean \
-  cmd-trash-list cmd-trash-empty cmd-trash-prune cmd-trash-auto-on cmd-trash-auto-off \
-  cmd-trash-auto-status cmd-model cmd-model-set cmd-model-current cmd-question \
-  cmd-new cmd-resume cmd-git copilot-cmd-send
-do
-  if [ -f "$HOME/.local/bin/$f" ]; then
-    cp -a "$HOME/.local/bin/$f" "$PUB/bin/"
-  else
-    echo "WARNING: missing ~/.local/bin/$f"
-  fi
+# 从仓库工作树构建完整公共包；不要从 ~/.local 反向复制，以免漏掉新库或混入用户文件。
+cp -p "$PKG_DIR/README.md" "$PKG_DIR/LICENSE" "$PKG_DIR/install.sh" "$PKG_DIR/uninstall.sh" "$PKG_DIR/VERSION" "$PUB/"
+cp -p "$PKG_DIR/bin/"* "$PUB/bin/"
+cp -p "$PKG_DIR/lib/"* "$PUB/lib/"
+cp -p "$PKG_DIR/config/copilot-models" "$PUB/config/"
+
+# 检查发布包中所有受管文件均存在。
+for f in README.md LICENSE install.sh uninstall.sh VERSION; do
+  [ -f "$PUB/$f" ] || { echo "ERROR: missing public artifact: $PUB/$f" >&2; exit 1; }
 done
+[ -f "$PUB/config/copilot-models" ] || { echo "ERROR: missing model config" >&2; exit 1; }
 
-cp -a "$HOME/.local/lib/copilot-cmd-env.sh" "$PUB/lib/"
-
-date '+cmd-helper-%Y%m%d-%H%M%S' > "$PUB/VERSION"
-
-chmod -R a+rX "$PUB"
-find "$PUB/bin" "$PUB/lib" -type f -exec chmod 755 {} \;
+find "$PUB" -type d -exec chmod 755 {} \\;
+find "$PUB/bin" "$PUB/lib" -type f -exec chmod 755 {} \\;
 chmod 755 "$PUB/install.sh" "$PUB/uninstall.sh"
-chmod 644 "$PUB/README.md"
+chmod 644 "$PUB/README.md" "$PUB/LICENSE" "$PUB/VERSION" "$PUB/config/copilot-models"
 ```
 
 不要把任何真实 API Key 放进公共包。

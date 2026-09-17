@@ -86,35 +86,76 @@ cmd_require_command() {
   return 0
 }
 
-# --- cmd_warn_missing_command ---
-# 可选命令缺失时，仅给出警告并返回 1，不让脚本失败。
-# 用法：cmd_warn_missing_command <命令名> ["补充说明"]
-cmd_warn_missing_command() {
-  local name="${1:-}"
-  local msg="${2:-}"
-  [ -n "$name" ] || return 1
-  if ! command -v "$name" >/dev/null 2>&1; then
-    echo "警告：未找到可选命令：$name" >&2
-    [ -n "$msg" ] && echo "  $msg" >&2
-    return 1
-  fi
-  return 0
+# --- cmd_redact_stream ---
+# Redact common credentials before text enters a context snapshot or model prompt.
+# This intentionally handles common shell/config forms; it is not a secret scanner.
+cmd_redact_stream() {
+  sed -E \
+    -e 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' \
+    -e 's#([?&](api[_-]?key|access[_-]?token|token|password|passwd|secret)=)[^&#[:space:]]+#\1<redacted>#gi' \
+    -e 's#((api[_-]?key|access[_-]?token|token|password|passwd|secret)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+#\1<redacted>#gi' \
+    -e 's#(Bearer[[:space:]]+)[^[:space:]]+#\1<redacted>#gi' \
+    -e 's#-----BEGIN [A-Z ]*PRIVATE KEY-----#<redacted-private-key>#g'
 }
 
-# --- safe_rm_rf_path ---
+# --- cmd_redact_file_tail <file> <lines> ---
+cmd_redact_file_tail() {
+  local file="${1:-}" lines="${2:-50}"
+  [ -f "$file" ] || return 1
+  case "$lines" in
+    ''|*[!0-9]*) lines=50 ;;
+  esac
+  tail -n "$lines" "$file" 2>/dev/null | cmd_redact_stream
+}
+
+
 # 仅当目标严格位于允许的根目录之内时，才用 `rm -rf` 删除。
-# 拒绝删除根目录本身，以及根目录之外的任何路径。
+# 拒绝删除根目录本身、根目录之外的路径，以及无法解析的路径。
+# 如果目标本身是符号链接，只删除链接，不跟随链接删除其目标。
 # 用法：safe_rm_rf_path <允许的根目录> <目标>
 safe_rm_rf_path() {
   local root="${1:-}" target="${2:-}"
   [ -n "$root" ] && [ -n "$target" ] || return 1
-  local rroot rtarget
-  rroot="$(resolve_path "$root")"
-  rtarget="$(resolve_path "$target")"
-  case "$rtarget" in
-    "$rroot"/?*) rm -rf -- "$rtarget" ;;
+
+  local rroot parent name rparent lexical_target resolved_target
+  rroot="$(resolve_path "$root")" || return 1
+  [ -d "$rroot" ] || return 1
+
+  # Resolve only the parent.  Resolving the target itself would follow a
+  # symlink and could make rm -rf delete the link's target instead of the link.
+  parent="$(dirname -- "$target")"
+  name="$(basename -- "$target")"
+  rparent="$(resolve_path "$parent")" || return 1
+  lexical_target="$rparent/$name"
+
+  case "$lexical_target" in
+    "$rroot"/?*)
+      ;;
     *)
-      echo "safe_rm_rf_path：拒绝删除 '$rtarget'（不在 '$rroot' 之内）" >&2
+      echo "safe_rm_rf_path：拒绝删除 '$lexical_target'（不在 '$rroot' 之内）" >&2
+      return 1
+      ;;
+  esac
+  if [ "$rparent" != "$rroot" ]; then
+    echo "safe_rm_rf_path：拒绝删除非直接子项 '$target'" >&2
+    return 1
+  fi
+
+  if [ -L "$target" ]; then
+    rm -f -- "$target"
+    return $?
+  fi
+
+  [ -e "$target" ] || {
+    echo "safe_rm_rf_path：目标不存在 '$target'" >&2
+    return 1
+  }
+
+  resolved_target="$(resolve_path "$target")" || return 1
+  case "$resolved_target" in
+    "$rroot"/?*) rm -rf -- "$target" ;;
+    *)
+      echo "safe_rm_rf_path：拒绝删除 '$resolved_target'（不在 '$rroot' 之内）" >&2
       return 1
       ;;
   esac

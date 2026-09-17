@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+VERSION_FILE="$HOME/.local/lib/VERSION"
+INSTALL_BIN="$HOME/.local/bin"
+COPILOT_BIN="$(command -v copilot 2>/dev/null || true)"
+
+if [ -f "$VERSION_FILE" ]; then
+  VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
+else
+  VERSION="unknown (VERSION file not installed)"
+fi
+
+printf 'cmd-helper version: %s\n' "$VERSION"
+printf 'install path: %s\n' "$INSTALL_BIN"
+printf 'shell: %s\n' "${SHELL:-unknown}"
+printf 'bash: %s\n' "$(bash --version 2>/dev/null | head -n 1 || printf 'unavailable')"
+
+if [ -n "$COPILOT_BIN" ]; then
+  printf 'copilot: %s\n' "$COPILOT_BIN"
+  printf 'copilot version: %s\n' "$(copilot --version 2>/dev/null | head -n 1 || printf 'unavailable')"
+else
+  printf 'copilot: missing\n'
+fi
+
+if command -v node >/dev/null 2>&1; then
+  printf 'node version: %s\n' "$(node --version 2>/dev/null || printf 'unavailable')"
+else
+  printf 'node version: missing\n'
+fi
