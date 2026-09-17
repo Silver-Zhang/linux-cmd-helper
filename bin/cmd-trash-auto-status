@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-trash.sh"
+
 if ! command -v crontab >/dev/null 2>&1; then
   echo "未找到 crontab，本系统上无法使用定时清理回收站功能。"
   echo "请手动清理：cmd-trash-prune [天数] [sessions|cache|all]"
   exit 0
 fi
 
-MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
-MARK_END="# END COPILOT-CMD-TRASH-AUTO"
-
-if crontab -l 2>/dev/null | sed -n "/$MARK_BEGIN/,/$MARK_END/p" | grep -q "$MARK_BEGIN"; then
-  echo "回收站定时清理：已开启"
-  crontab -l 2>/dev/null | sed -n "/$MARK_BEGIN/,/$MARK_END/p"
-else
-  echo "回收站定时清理：已关闭"
+if ! cmd_trash_crontab_read; then
+  echo "回收站定时清理：无法读取 crontab（原因见上方）。" >&2
+  exit 1
 fi
+
+case "$(cmd_trash_mark_state)" in
+  both)
+    echo "回收站定时清理：已开启"
+    cmd_trash_crontab_block
+    ;;
+  none)
+    echo "回收站定时清理：已关闭"
+    echo "开启方式：cmd-trash-auto-on [天数]"
+    ;;
+  broken)
+    echo "回收站定时清理：标记块不完整，状态未知" >&2
+    echo "crontab 中只找到下面两行中的一行，请手工检查：" >&2
+    echo "  $CMD_TRASH_MARK_BEGIN" >&2
+    echo "  $CMD_TRASH_MARK_END" >&2
+    exit 1
+    ;;
+esac

@@ -48,6 +48,26 @@ Security:
 
 ### Fixed
 - `uninstall.sh` now removes `cmd-new`, `cmd-resume`, and all installed `lib/copilot-cmd-*.sh` helpers (previously only `copilot-cmd-env.sh` was removed).
+- Fix trash entries being deleted immediately instead of after the retention period.
+  `cmd-clean` moves entries into the trash with `mv`, which preserves the directory's original
+  mtime, while `cmd-trash-prune` deletes by `-mtime`. An entry whose mtime was already older than
+  the retention window was therefore removed by the next prune run (usually the daily cron job)
+  rather than being kept for N days. `cmd-clean` now resets the timestamp on move, so the
+  retention period counts from the moment the entry enters the trash.
+- Fix `cmd-trash-auto-off` deleting unrelated crontab entries. It removed the marker block with
+  `sed "/BEGIN/,/END/d"`; when the crontab held a `BEGIN` without a matching `END`, the address
+  range extended to the end of the file and every entry after the marker was removed. The same
+  code path could also wipe the entire crontab when `crontab -l` failed, because a read error was
+  indistinguishable from an empty table.
+- `cmd-trash-auto-on` had the same two problems and is fixed the same way.
+- Add `lib/copilot-cmd-trash.sh`: shared crontab helpers that read the crontab safely (only
+  "no crontab for <user>" is treated as empty), validate that the marker pair is complete and
+  correctly ordered before any modification, and remove the block with an exact-line `awk`
+  match instead of a `sed` address range.
+- `cmd-trash-auto-status` now reports a half-present marker block instead of silently reporting
+  the feature as enabled, and reads the crontab once instead of three times.
+- `cmd-trash-auto-on` now writes the absolute path reported by `command -v cmd-trash-prune`
+  rather than hardcoding `~/.local/bin`, and refuses to install a cron entry that could not run.
 
 - Prepare the project for open-source release.
 

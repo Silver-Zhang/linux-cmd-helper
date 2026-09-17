@@ -148,6 +148,7 @@ linux-cmd-helper/
 │   ├── cmd
 │   ├── cmdx
 │   ├── cmd-chat
+│   ├── cmd-git
 │   ├── cmd-new
 │   ├── cmd-resume
 │   ├── cmd-context
@@ -167,7 +168,11 @@ linux-cmd-helper/
 │   ├── cmd-question
 │   └── copilot-cmd-send
 ├── lib/
-│   └── copilot-cmd-env.sh
+│   ├── copilot-cmd-platform.sh
+│   ├── copilot-cmd-env.sh
+│   ├── copilot-cmd-context.sh
+│   ├── copilot-cmd-ui.sh
+│   └── copilot-cmd-trash.sh
 ├── config/
 │   └── copilot-models
 ├── docs/

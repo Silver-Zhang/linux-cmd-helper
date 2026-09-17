@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-trash.sh"
+
 DAYS="${1:-30}"
 
 if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
@@ -14,22 +17,37 @@ if ! command -v crontab >/dev/null 2>&1; then
   exit 1
 fi
 
-CMD="$HOME/.local/bin/cmd-trash-prune $DAYS all >/dev/null 2>&1"
-MARK_BEGIN="# BEGIN COPILOT-CMD-TRASH-AUTO"
-MARK_END="# END COPILOT-CMD-TRASH-AUTO"
+# cron 运行时 PATH 很有限，必须写入绝对路径。
+PRUNE_BIN="$(command -v cmd-trash-prune 2>/dev/null || true)"
+[ -n "$PRUNE_BIN" ] || PRUNE_BIN="$HOME/.local/bin/cmd-trash-prune"
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+if [ ! -x "$PRUNE_BIN" ]; then
+  echo "错误：找不到可执行的 cmd-trash-prune（$PRUNE_BIN）。" >&2
+  echo "此时写入的定时任务无法运行，已中止。请先重新安装：bash install.sh" >&2
+  exit 1
+fi
 
-crontab -l 2>/dev/null | sed "/$MARK_BEGIN/,/$MARK_END/d" > "$TMP" || true
+if ! cmd_trash_crontab_read; then
+  exit 1
+fi
+
+# 标记块不完整时拒绝操作：此时任何「按范围删除」都可能连带删掉用户自己的定时任务。
+if [ "$(cmd_trash_mark_state)" = "broken" ]; then
+  echo "错误：crontab 中的标记块不完整，已中止，未做任何修改。" >&2
+  echo "请先执行 crontab -l 检查下面两行是否成对出现，手工修复后重试：" >&2
+  echo "  $CMD_TRASH_MARK_BEGIN" >&2
+  echo "  $CMD_TRASH_MARK_END" >&2
+  exit 1
+fi
 
 {
-  cat "$TMP"
-  echo "$MARK_BEGIN"
-  echo "30 3 * * * $CMD"
-  echo "$MARK_END"
+  cmd_trash_crontab_strip
+  echo "$CMD_TRASH_MARK_BEGIN"
+  echo "30 3 * * * $PRUNE_BIN $DAYS all >/dev/null 2>&1"
+  echo "$CMD_TRASH_MARK_END"
 } | crontab -
 
 echo "已开启回收站定时清理："
 echo "  保留天数: $DAYS"
 echo "  计划: 每天 03:30"
+echo "  命令: $PRUNE_BIN $DAYS all"
