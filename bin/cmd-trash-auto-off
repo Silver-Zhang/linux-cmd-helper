@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-trash.sh"
@@ -31,9 +32,12 @@ esac
 REMAINING="$(cmd_trash_crontab_strip)"
 
 if cmd_trash_crontab_is_empty "$REMAINING"; then
-  # 除了标记块之外没有别的内容，直接移除整份 crontab。
-  # 比给 crontab 写入空文件更明确：不同实现对空输入的处理并不一致。
-  crontab -r 2>/dev/null || true
+  # 只有确认 crontab 中没有其它内容时才删除整份表；删除失败必须报告，
+  # 不能继续输出“已关闭”，否则旧的定时任务可能仍在运行。
+  if ! crontab -r; then
+    echo "错误：删除空的 crontab 失败，回收站定时清理状态未确认。" >&2
+    exit 1
+  fi
 else
   printf '%s\n' "$REMAINING" | crontab -
 fi

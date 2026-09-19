@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 PROMPT_FILE=""
 ARGS=()
@@ -7,6 +8,10 @@ ARGS=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --prompt-file)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value after --prompt-file" >&2
+        exit 1
+      fi
       PROMPT_FILE="$2"
       shift 2
       ;;
@@ -34,11 +39,28 @@ if [ ! -f "$PROMPT_FILE" ]; then
   exit 1
 fi
 
-PROMPT="$(cat "$PROMPT_FILE")"
-
-# 优先继续 cmd 专用 session；没有 session 时创建新 session。
-if copilot --continue -p "$PROMPT" "${ARGS[@]}"; then
-  exit 0
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "错误：未找到 copilot 命令，请先安装 GitHub Copilot CLI。" >&2
+  exit 1
 fi
 
-copilot -p "$PROMPT" "${ARGS[@]}"
+PROMPT="$(cat "$PROMPT_FILE")"
+FIRST_OUTPUT="$(mktemp)"
+trap 'rm -f "$FIRST_OUTPUT"' EXIT
+
+# 优先继续 cmd 专用 session。只有明确像「没有可继续的 session」时才创建新 session；
+# 认证、网络、参数和服务端错误不能被当成 no-session 重试，否则可能重复请求/收费。
+if copilot --continue -p "$PROMPT" "${ARGS[@]}" >"$FIRST_OUTPUT" 2>&1; then
+  cat "$FIRST_OUTPUT"
+  exit 0
+else
+  FIRST_RC=$?
+fi
+
+if grep -Eiq 'no (active )?(session|conversation)|no session to continue|cannot continue|nothing to continue|session.*not found|conversation.*not found' "$FIRST_OUTPUT"; then
+  copilot -p "$PROMPT" "${ARGS[@]}"
+  exit $?
+fi
+
+cat "$FIRST_OUTPUT" >&2
+exit "$FIRST_RC"

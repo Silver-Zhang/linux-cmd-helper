@@ -16,7 +16,8 @@ Recommended layout:
     ├── uninstall.sh
     ├── bin/
     ├── lib/
-    └── config/
+    ├── config/
+    └── VERSION
 
 ## Permissions
 

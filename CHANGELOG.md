@@ -66,8 +66,24 @@ Security:
   match instead of a `sed` address range.
 - `cmd-trash-auto-status` now reports a half-present marker block instead of silently reporting
   the feature as enabled, and reads the crontab once instead of three times.
-- `cmd-trash-auto-on` now writes the absolute path reported by `command -v cmd-trash-prune`
-  rather than hardcoding `~/.local/bin`, and refuses to install a cron entry that could not run.
+- `cmd`, `cmdx`, `cmd-new`, `cmd-chat`, `cmd-resume`, `cmd-git` and `cmd-suggest` no longer
+  evaluate or require the DeepSeek config until the DeepSeek backend is selected. Native-only
+  users can now run `--copilot` and `--help` without a DeepSeek key.
+- Restrict permanent trash deletion to direct children of the selected trash root, handle dotfiles,
+  and avoid GNU-only `find -mindepth/-maxdepth` flags. Add HOME and strong-confirmation safeguards
+  to uninstall, and make EOF preserve user data.
+- Replace `cmd-model`'s Bash 4-only `mapfile` with indexed-array loading compatible with macOS's
+  system Bash 3.2.
+- Add `cmd-version` and install the package VERSION as private local metadata.
+- Make context snapshots unique under concurrent invocation, redact common credentials in remotes,
+  history and output tails, honor `$HISTFILE`, and allow skipping/timing out disk usage scans.
+- Make `cmd-suggest` use compact context, reuse the cmd session sender, bound previous suggestions,
+  validate the five-line response, preserve the previous result on failure, and handle EOF safely.
+- Make `copilot-cmd-send` retry only when the continue output indicates a missing session; auth,
+  network and other failures are no longer retried as if no session existed.
+- Add a no-network integration harness covering native-only, deletion, context, suggestion,
+  sender, installer, and crontab failure cases.
+
 - `cmd`, `cmdx` and `cmd-git` no longer exit silently when the model call fails. Because the call
   site ran under `set -e`, a non-zero return exited the script before the response file was
   printed: the user saw only an exit code while the CLI's error message sat unread in a temp file.

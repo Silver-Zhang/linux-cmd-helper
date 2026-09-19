@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 MODEL_DIR="$HOME/.config/copilot-cmd"
 MODEL_FILE="$MODEL_DIR/copilot-models"
 CURRENT_FILE="$MODEL_DIR/current-native-model"
 
 mkdir -p "$MODEL_DIR"
+chmod 700 "$MODEL_DIR" 2>/dev/null || true
+
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "错误：未找到 copilot 命令，请先安装 GitHub Copilot CLI。" >&2
+  exit 1
+fi
 
 if [ ! -f "$MODEL_FILE" ]; then
   cat > "$MODEL_FILE" <<'MODELS'
@@ -51,13 +58,19 @@ cat <<'MSG'
 退出后，脚本会让你同步保存一个“显示用模型名”。
 MSG
 
-copilot || true
+if ! copilot; then
+  echo "警告：Copilot CLI 退出时返回非零状态；下面的模型名仅供手工记录。" >&2
+fi
 
 echo
 echo "请同步记录你刚才在 Copilot /model 中选择的模型："
 echo
 
-mapfile -t MODELS < <(grep -v '^[[:space:]]*$' "$MODEL_FILE" | grep -v '^[[:space:]]*#')
+MODELS=()
+while IFS= read -r model; do
+  [ -n "$model" ] || continue
+  MODELS[${#MODELS[@]}]="$model"
+done < <(awk 'NF && $0 !~ /^[[:space:]]*#/' "$MODEL_FILE")
 
 i=1
 for m in "${MODELS[@]}"; do
@@ -68,7 +81,10 @@ printf '  %d) 手动输入模型名\n' "$i"
 printf '  0) 不更新\n'
 
 echo
-read -r -p "输入编号: " choice
+if ! read -r -p "输入编号: " choice; then
+  echo "已取消（未收到输入）。" >&2
+  exit 0
+fi
 
 if [ -z "$choice" ] || [ "$choice" = "0" ]; then
   echo "未更新显示模型名。"
@@ -83,7 +99,10 @@ fi
 if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODELS[@]}" ]; then
   SELECTED="${MODELS[$((choice - 1))]}"
 elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -eq "$i" ]; then
-  read -r -p "请输入模型显示名: " SELECTED
+  if ! read -r -p "请输入模型显示名: " SELECTED; then
+    echo "已取消（未收到输入）。" >&2
+    exit 0
+  fi
   if [ -z "$SELECTED" ]; then
     echo "Error: empty model name." >&2
     exit 1

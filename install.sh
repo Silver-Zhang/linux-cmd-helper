@@ -90,6 +90,21 @@ configure_path() {
   fi
 }
 
+# copy_tree <source_dir> <destination_dir>
+# Use flags shared by GNU and BSD cp. Permissions are normalized below.
+copy_tree() {
+  local src="$1"
+  local dst="$2"
+  cp -Rp "$src"/. "$dst"/
+}
+
+# copy_file <source> <destination_dir>
+copy_file() {
+  local src="$1"
+  local dst="$2"
+  cp -p "$src" "$dst/"
+}
+
 # ------------------------------------------------------------
 # 1. 创建用户本地目录
 # ------------------------------------------------------------
@@ -98,6 +113,11 @@ mkdir -p "$HOME/.local/lib"
 mkdir -p "$HOME/.config/copilot-deepseek"
 mkdir -p "$HOME/.config/copilot-cmd"
 mkdir -p "$HOME/.cache/copilot-cmd"
+
+if [ -f "$PKG_DIR/VERSION" ]; then
+  copy_file "$PKG_DIR/VERSION" "$HOME/.local/lib"
+  chmod 600 "$HOME/.local/lib/VERSION"
+fi
 mkdir -p "$HOME/.copilot-cmd"
 
 # ------------------------------------------------------------
@@ -108,7 +128,7 @@ if [ ! -d "$PKG_DIR/bin" ]; then
   exit 1
 fi
 
-cp -a "$PKG_DIR/bin/"* "$HOME/.local/bin/"
+copy_tree "$PKG_DIR/bin" "$HOME/.local/bin"
 chmod 700 "$HOME/.local/bin"/cmd* 2>/dev/null || true
 chmod 700 "$HOME/.local/bin"/copilot-* 2>/dev/null || true
 
@@ -120,7 +140,7 @@ if [ ! -d "$PKG_DIR/lib" ]; then
   exit 1
 fi
 
-cp -a "$PKG_DIR/lib/"* "$HOME/.local/lib/"
+copy_tree "$PKG_DIR/lib" "$HOME/.local/lib"
 chmod 700 "$HOME/.local/lib"/*.sh 2>/dev/null || true
 
 # ------------------------------------------------------------
@@ -128,7 +148,7 @@ chmod 700 "$HOME/.local/lib"/*.sh 2>/dev/null || true
 # ------------------------------------------------------------
 if [ -f "$PKG_DIR/config/copilot-models" ]; then
   if [ ! -f "$HOME/.config/copilot-cmd/copilot-models" ]; then
-    cp -a "$PKG_DIR/config/copilot-models" "$HOME/.config/copilot-cmd/copilot-models"
+    copy_file "$PKG_DIR/config/copilot-models" "$HOME/.config/copilot-cmd"
     echo "已安装: ~/.config/copilot-cmd/copilot-models"
   else
     echo "保留已有: ~/.config/copilot-cmd/copilot-models"
@@ -292,7 +312,7 @@ fi
 echo
 echo "基本测试："
 echo "  cmd --help"
-echo "  cmd-context"
+echo "  cmd-version"
 echo "  cmd-run echo OK"
 echo "  cmd-git status        # 在 Git 仓库内"
 echo

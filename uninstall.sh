@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -z "${HOME:-}" ] || [ "$HOME" = "/" ]; then
+  echo "错误：HOME 为空或为 /，为避免误删系统文件，拒绝卸载。" >&2
+  exit 1
+fi
+case "$HOME" in
+  /*) ;;
+  *)
+    echo "错误：HOME 必须是绝对路径，为避免误删文件，拒绝卸载。" >&2
+    exit 1
+    ;;
+esac
+HOME_REAL="$(cd -- "$HOME" 2>/dev/null && pwd -P)" || {
+  echo "错误：无法解析 HOME，为避免误删文件，拒绝卸载。" >&2
+  exit 1
+}
+if [ "$HOME_REAL" = "/" ] || [ -z "$HOME_REAL" ]; then
+  echo "错误：HOME 解析为根目录，为避免误删系统文件，拒绝卸载。" >&2
+  exit 1
+fi
+
 echo "== cmd-helper 卸载器 =="
 echo
 
@@ -26,6 +46,7 @@ cmd-model
 cmd-model-set
 cmd-model-current
 cmd-question
+cmd-version
 copilot-cmd-send
 "
 
@@ -42,6 +63,7 @@ copilot-cmd-env.sh
 copilot-cmd-context.sh
 copilot-cmd-ui.sh
 copilot-cmd-trash.sh
+VERSION
 "
 
 for f in $LIB_LIST; do
@@ -54,9 +76,11 @@ done
 echo
 echo "脚本已删除。"
 echo
-read -r -p "是否删除用户配置和缓存？这包括 API key 模板/配置、session、日志。输入 yes 删除：" ans
+if ! read -r -p "是否删除用户配置和缓存？这包括 API key 模板/配置、session、日志。输入 YES I UNDERSTAND 删除：" ans; then
+  ans=""
+fi
 
-if [ "$ans" = "yes" ]; then
+if [ "$ans" = "YES I UNDERSTAND" ]; then
   rm -rf "$HOME/.config/copilot-deepseek"
   rm -rf "$HOME/.config/copilot-cmd"
   rm -rf "$HOME/.cache/copilot-cmd"

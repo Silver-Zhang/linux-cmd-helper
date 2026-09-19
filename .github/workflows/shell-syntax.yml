@@ -1,12 +1,15 @@
-name: Shell Syntax Check
+name: Shell Checks
 
 on:
   push:
   pull_request:
 
 jobs:
-  bash-syntax:
-    runs-on: ubuntu-latest
+  bash-check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -16,4 +19,12 @@ jobs:
         run: |
           bash -n install.sh
           bash -n uninstall.sh
-          find ./bin ./lib -type f -print0 | xargs -0 -I{} bash -n {}
+          find ./bin ./lib ./tests -type f -print0 | xargs -0 -n1 bash -n
+
+      - name: Run integration tests
+        run: bash tests/integration.sh
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: './bin ./lib ./tests install.sh uninstall.sh'

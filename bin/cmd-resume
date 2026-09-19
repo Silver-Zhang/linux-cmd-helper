@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+cmd_init_runtime
 
 usage() {
   cat <<'USAGE'
@@ -65,15 +67,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$BACKEND" = "deepseek" ]; then
+  cmd_require_deepseek_key || exit 1
+
   export COPILOT_PROVIDER_TYPE='anthropic'
   export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
   export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
   export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
-
-  if [ -z "${COPILOT_PROVIDER_API_KEY:-}" ]; then
-    echo "Error: COPILOT_PROVIDER_API_KEY is empty. Check ~/.config/copilot-deepseek/env" >&2
-    exit 1
-  fi
 
   case "$MODEL" in
     ""|flash)
@@ -104,6 +103,11 @@ else
   exit 1
 fi
 
+if ! command -v copilot >/dev/null 2>&1; then
+  echo "错误：未找到 copilot 命令，请先安装 GitHub Copilot CLI。" >&2
+  exit 1
+fi
+
 echo "" >&2
 if [ "$BACKEND" = "deepseek" ]; then
   echo "[cmd-resume] backend: DeepSeek BYOK" >&2
@@ -114,4 +118,4 @@ fi
 echo "[cmd-resume] opening session picker..." >&2
 echo "" >&2
 
-exec copilot --resume "${COPILOT_EXTRA_ARGS[@]}"
+exec copilot --resume "${COPILOT_EXTRA_ARGS[@]+${COPILOT_EXTRA_ARGS[@]}}"
