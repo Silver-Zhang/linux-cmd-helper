@@ -19,7 +19,9 @@ jobs:
         run: |
           bash -n install.sh
           bash -n uninstall.sh
-          find ./bin ./lib ./tests -type f -print0 | xargs -0 -n1 bash -n
+          for file in install.sh uninstall.sh bin/* lib/* tests/*; do
+            bash -n "$file"
+          done
 
       - name: Run integration tests
         run: bash tests/integration.sh
