@@ -24,9 +24,6 @@ jobs:
       - name: Run integration tests
         run: bash tests/integration.sh
 
-      - name: Install ShellCheck
-        if: matrix.os == 'macos-latest'
-        run: brew install shellcheck
-
       - name: ShellCheck
+        if: matrix.os == 'ubuntu-latest'
         run: shellcheck install.sh uninstall.sh bin/* lib/* tests/*
