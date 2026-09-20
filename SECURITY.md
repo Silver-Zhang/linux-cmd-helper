@@ -27,6 +27,8 @@ This tool may store local runtime data under:
 
 These directories may contain prompts, command outputs, terminal logs, model responses, approved command execution records, and session metadata.
 
+Full context mode can also include a bounded tail of shell history, Git remote information, directory listings, and command logs. Treat full-context output as sensitive: inspect it before sending it to a model. cmd-helper redacts common credentials such as URL userinfo, Bearer tokens, API-key/token/password assignments, and private-key headers, but redaction is not a guarantee. Do not put secrets in shell history or command output.
+
 Do not upload these directories to public repositories.
 
 ## Public Deployment

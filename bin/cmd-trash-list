@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SESSION_TRASH="$HOME/.copilot-cmd-trash"
 CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"

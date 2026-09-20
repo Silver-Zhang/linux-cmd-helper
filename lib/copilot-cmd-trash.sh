@@ -20,16 +20,13 @@ CMD_TRASH_CRONTAB=""
 cmd_trash_crontab_read() {
   local out=""
   if ! out="$(crontab -l 2>&1)"; then
-    case "$out" in
-      *"no crontab for"*)
-        out=""
-        ;;
-      *)
-        echo "错误：读取 crontab 失败。为避免覆盖你已有的 crontab，本次不做任何修改。" >&2
-        echo "  crontab 返回：$out" >&2
-        return 1
-        ;;
-    esac
+    if printf '%s\n' "$out" | grep -Eq '^(crontab: )?no crontab for [^[:space:]]+$'; then
+      out=""
+    else
+      echo "错误：读取 crontab 失败。为避免覆盖你已有的 crontab，本次不做任何修改。" >&2
+      echo "  crontab 返回：$out" >&2
+      return 1
+    fi
   fi
   CMD_TRASH_CRONTAB="$out"
   return 0
@@ -45,12 +42,12 @@ cmd_trash_crontab_read() {
 # 会一直延伸到文件末尾，把标记之后用户自己的定时任务一并删掉。
 cmd_trash_mark_state() {
   printf '%s\n' "$CMD_TRASH_CRONTAB" | awk -v b="$CMD_TRASH_MARK_BEGIN" -v e="$CMD_TRASH_MARK_END" '
-    $0 == b && first_begin == 0 { first_begin = NR }
-    $0 == e && first_end   == 0 { first_end   = NR }
+    $0 == b { begins++ ; if (first_begin == 0) first_begin = NR }
+    $0 == e { ends++   ; if (first_end == 0) first_end = NR }
     END {
-      if (first_begin == 0 && first_end == 0)              print "none"
-      else if (first_begin > 0 && first_end > first_begin) print "both"
-      else                                                 print "broken"
+      if (begins == 0 && ends == 0) print "none"
+      else if (begins == 1 && ends == 1 && first_begin < first_end) print "both"
+      else print "broken"
     }
   '
 }
