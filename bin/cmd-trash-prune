@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
 
 DAYS="${1:-30}"
 SCOPE="${2:-all}"
@@ -9,12 +13,23 @@ if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+case "$SCOPE" in
+  sessions|cache|all)
+    ;;
+  *)
+    echo "Usage: cmd-trash-prune [days] [sessions|cache|all]" >&2
+    exit 1
+    ;;
+esac
+
 SESSION_TRASH="$HOME/.copilot-cmd-trash"
 CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"
 
 prune_dir() {
   local dir="$1"
   local days="$2"
+  local entry
+  local cutoff_found=0
 
   if [ ! -d "$dir" ]; then
     echo "Not found: $dir"
@@ -22,7 +37,24 @@ prune_dir() {
   fi
 
   echo "Pruning entries older than $days days in: $dir"
-  find "$dir" -mindepth 1 -maxdepth 1 -mtime +"$days" -print -exec rm -rf -- {} +
+
+  # Bash globbing processes only direct children and works with BSD and GNU
+  # userlands alike. Dot entries are included explicitly; . and .. are not.
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+      continue
+    fi
+
+    # `-quit` is GNU-only; this expression still emits at most one line because
+    # `-prune` prevents descending into the entry.
+    if [ -n "$(find "$entry" -prune -mtime +"$days" -print 2>/dev/null)" ]; then
+      cutoff_found=1
+      echo "Deleting: $entry"
+      safe_rm_rf_path "$dir" "$entry"
+    fi
+  done
+
+  [ "$cutoff_found" -eq 1 ] || echo "No expired entries."
 }
 
 case "$SCOPE" in
@@ -35,9 +67,5 @@ case "$SCOPE" in
   all)
     prune_dir "$SESSION_TRASH" "$DAYS"
     prune_dir "$CACHE_TRASH" "$DAYS"
-    ;;
-  *)
-    echo "Usage: cmd-trash-prune [days] [sessions|cache|all]" >&2
-    exit 1
     ;;
 esac

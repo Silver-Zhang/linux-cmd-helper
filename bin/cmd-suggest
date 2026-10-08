@@ -1,23 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-env.sh"
+cmd_init_runtime
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-context.sh"
+
+cmd_require_deepseek_key || exit 1
+
+if ! command -v copilot-cmd-send >/dev/null 2>&1; then
+  echo "错误：未找到 copilot-cmd-send，请重新安装 cmd-helper。" >&2
+  exit 1
+fi
+
+export COPILOT_PROVIDER_TYPE='anthropic'
+export COPILOT_PROVIDER_BASE_URL='https://api.deepseek.com/anthropic'
+export COPILOT_PROVIDER_MAX_PROMPT_TOKENS='840000'
+export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS='128000'
+export COPILOT_MODEL="${COPILOT_MODEL:-$CMD_DEEPSEEK_FLASH_MODEL}"
 
 BASE="$HOME/.cache/copilot-cmd"
 SUG_DIR="$BASE/suggestions"
 mkdir -p "$SUG_DIR"
 
-CTX="$(cmd-context)"
 OUT="$SUG_DIR/latest.txt"
 PREV="$SUG_DIR/previous.txt"
+CTX="$SUG_DIR/context.txt"
+SUG_TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$SUG_TMP_DIR"' EXIT
 
-: > "$PREV"
+# Suggestions should use the same compact, opt-in context policy as cmd/cmdx.
+# Do not implicitly generate and send the full cmd-context snapshot.
+{
+  append_compact_context
+} > "$CTX"
+
+MAX_PREVIOUS_LINES="${CMD_SUGGEST_PREVIOUS_LINES:-40}"
+case "$MAX_PREVIOUS_LINES" in
+  ''|*[!0-9]*) MAX_PREVIOUS_LINES=40 ;;
+esac
+
 
 generate_suggestions() {
   local prompt_file
-  prompt_file="$(mktemp)"
-  trap 'rm -f "$prompt_file"' RETURN
+  prompt_file="$SUG_TMP_DIR/prompt.txt"
 
   {
     cat <<'HEADER'
@@ -60,23 +88,48 @@ HEADER
   echo "" >&2
 
   # 生成问题。这里禁止 shell/write 工具，cmd-suggest 只需要纯文本推荐。
-  if ! copilot -p "$(cat "$prompt_file")" \
+  # 先写临时文件，避免第一次失败时覆盖上一批可用结果。
+  CANDIDATE="$SUG_DIR/.latest.$$"
+  if copilot-cmd-send --prompt-file "$prompt_file" -- \
       --deny-tool='shell(*)' \
-      --deny-tool='write' | tee "$OUT"; then
+      --deny-tool='write' > "$CANDIDATE" 2>&1; then
+    :
+  else
+    FIRST_RC=$?
     echo "" >&2
-    echo "[cmd-suggest] first attempt failed; retrying with --deny-tool=shell" >&2
-    copilot -p "$(cat "$prompt_file")" \
-      --deny-tool='shell' \
-      --deny-tool='write' | tee "$OUT"
+    echo "[cmd-suggest] first attempt failed (exit $FIRST_RC); retrying with --deny-tool=shell" >&2
+    if copilot-cmd-send --prompt-file "$prompt_file" -- \
+        --deny-tool='shell' \
+        --deny-tool='write' > "$CANDIDATE" 2>&1; then
+      :
+    else
+      SECOND_RC=$?
+      rm -f "$CANDIDATE"
+      echo "[cmd-suggest] model call failed (exit $SECOND_RC); previous suggestions were kept." >&2
+      return "$SECOND_RC"
+    fi
   fi
 
-  {
-    cat "$PREV" 2>/dev/null || true
-    echo
-    cat "$OUT" 2>/dev/null || true
-  } > "$PREV.tmp"
+  if [ ! -s "$CANDIDATE" ]; then
+    echo "[cmd-suggest] model returned no suggestions; previous suggestions were kept." >&2
+    rm -f "$CANDIDATE"
+    return 1
+  fi
 
-  mv "$PREV.tmp" "$PREV"
+  # Keep only the latest bounded batch. This avoids an unbounded prompt and
+  # prevents previous.txt from growing forever during repeated `r` actions.
+  awk '/^\[[1-5]\][[:space:]]+[^[:space:]].*/ { print; count++; if (count == 5) exit }' \
+    "$CANDIDATE" > "$OUT.tmp"
+  if [ "$(wc -l < "$OUT.tmp" | tr -d ' ')" -ne 5 ]; then
+    echo "[cmd-suggest] model returned an invalid suggestion list; previous suggestions were kept." >&2
+    rm -f "$CANDIDATE" "$OUT.tmp"
+    return 1
+  fi
+  mv "$OUT.tmp" "$OUT"
+  rm -f "$CANDIDATE"
+  cp "$OUT" "$PREV.tmp"
+  tail -n "$MAX_PREVIOUS_LINES" "$PREV.tmp" > "$PREV"
+  rm -f "$PREV.tmp"
 }
 
 while true; do
@@ -90,7 +143,11 @@ while true; do
   echo "  回车 退出"
   echo
 
-  read -r -p "请选择: " ans
+  read -r -p "请选择: " ans || {
+    echo "" >&2
+    echo "已取消（未收到输入）。" >&2
+    exit 0
+  }
 
   case "$ans" in
     "")
@@ -106,7 +163,7 @@ while true; do
       continue
       ;;
     1|2|3|4|5)
-      QUESTION="$(sed -n "s/^\[$ans\][[:space:]]*//p" "$OUT" | head -n 1)"
+      QUESTION="$(awk -v n="$ans" '$0 ~ "^\\[" n "\\][[:space:]]+" { sub("^\\[" n "\\][[:space:]]+", ""); print; exit }' "$OUT")"
       if [ -z "$QUESTION" ]; then
         echo "No question found for [$ans]." >&2
         exit 1

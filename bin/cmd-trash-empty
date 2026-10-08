@@ -1,29 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
+# shellcheck disable=SC1090
+source "$HOME/.local/lib/copilot-cmd-platform.sh"
 
 SCOPE="${1:-all}"
-
 SESSION_TRASH="$HOME/.copilot-cmd-trash"
 CACHE_TRASH="$HOME/.cache/copilot-cmd-trash"
 
-empty_dir() {
-  local dir="$1"
-  if [ -d "$dir" ]; then
-    find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    echo "Emptied: $dir"
-  else
-    echo "Not found: $dir"
-  fi
-}
+case "$SCOPE" in
+  sessions|cache|all)
+    ;;
+  *)
+    echo "Usage: cmd-trash-empty [sessions|cache|all]" >&2
+    exit 1
+    ;;
+esac
 
-echo "This will permanently delete trash contents for scope: $SCOPE"
+action=""
+case "$SCOPE" in
+  sessions) action="sessions 回收站" ;;
+  cache) action="cache 回收站" ;;
+  all) action="所有回收站" ;;
+esac
+
+echo "This will permanently delete trash contents for scope: $action"
 echo "Input yes to continue."
-read -r -p "Confirm: " ans
+if ! read -r -p "Confirm: " ans; then
+  echo "Cancelled (no confirmation received)." >&2
+  exit 0
+fi
 
 if [ "$ans" != "yes" ]; then
   echo "Cancelled."
   exit 0
 fi
+
+empty_dir() {
+  local dir="$1"
+  local entry
+  local found=0
+
+  if [ ! -d "$dir" ]; then
+    echo "Not found: $dir"
+    return 0
+  fi
+
+  # Bash globs cover ordinary and dot-prefixed direct children without relying
+  # on GNU find's -mindepth/-maxdepth. Never include the trash root itself.
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+      continue
+    fi
+    found=1
+    echo "Deleting: $entry"
+    safe_rm_rf_path "$dir" "$entry"
+  done
+
+  [ "$found" -eq 1 ] || echo "Empty: $dir"
+}
 
 case "$SCOPE" in
   sessions)
@@ -35,9 +71,5 @@ case "$SCOPE" in
   all)
     empty_dir "$SESSION_TRASH"
     empty_dir "$CACHE_TRASH"
-    ;;
-  *)
-    echo "Usage: cmd-trash-empty [sessions|cache|all]" >&2
-    exit 1
     ;;
 esac

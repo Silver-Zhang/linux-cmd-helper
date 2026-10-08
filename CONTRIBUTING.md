@@ -20,11 +20,26 @@ This project is a Linux terminal AI assistant wrapper. Please follow these princ
 
 ## Testing
 
+All scripts must remain compatible with the Bash shipped by supported platforms.
+In particular, macOS's system Bash is 3.2: do not add `mapfile`/`readarray`, associative arrays,
+or other Bash 4-only features.
+
 Before submitting changes, run:
 
     bash -n install.sh
     bash -n uninstall.sh
     find ./bin ./lib -type f -print0 | xargs -0 -I{} bash -n {}
+
+If `shellcheck` is available, also run:
+
+    shellcheck install.sh uninstall.sh bin/* lib/*
+
+The integration tests use temporary HOME/PATH values and fake `copilot`/`crontab` commands;
+they must never require a real API key or modify a user's real crontab.
+
+Run the local regression harness with:
+
+    bash tests/integration.sh
 
 Recommended manual tests:
 

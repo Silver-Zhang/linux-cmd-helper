@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 MODEL_DIR="$HOME/.config/copilot-cmd"
 CURRENT_FILE="$MODEL_DIR/current-native-model"

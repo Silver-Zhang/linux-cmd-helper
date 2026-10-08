@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-platform.sh"
@@ -8,17 +9,26 @@ BASE="$HOME/.cache/copilot-cmd"
 LAST_Q_LINK="$BASE/last-question"
 QUESTION_FILE="$LAST_Q_LINK/question.txt"
 
-if [ ! -e "$LAST_Q_LINK" ]; then
+if [ ! -e "$LAST_Q_LINK" ] && [ ! -L "$LAST_Q_LINK" ]; then
   echo "No saved question yet. Ask something with: cmd \"your question\"" >&2
   exit 1
 fi
 
-if [ ! -f "$QUESTION_FILE" ]; then
-  echo "Error: last-question exists but question.txt is missing: $QUESTION_FILE" >&2
+if [ -L "$LAST_Q_LINK" ]; then
+  QUESTION_DIR="$(resolve_path "$LAST_Q_LINK" 2>/dev/null || true)"
+  if [ -z "$QUESTION_DIR" ] || [ ! -f "$QUESTION_DIR/question.txt" ]; then
+    echo "Error: last-question is a broken symlink: $LAST_Q_LINK" >&2
+    exit 1
+  fi
+  QUESTION_FILE="$QUESTION_DIR/question.txt"
+elif [ ! -f "$LAST_Q_LINK/question.txt" ]; then
+  echo "Error: last-question exists but question.txt is missing: $LAST_Q_LINK/question.txt" >&2
   exit 1
+else
+  QUESTION_DIR="$LAST_Q_LINK"
+  QUESTION_FILE="$LAST_Q_LINK/question.txt"
 fi
 
-QUESTION_DIR="$(resolve_path "$LAST_Q_LINK" 2>/dev/null || echo "$LAST_Q_LINK")"
-echo "[cmd-question] last question: $QUESTION_DIR"
-echo ""
+echo "[cmd-question] last question: $QUESTION_DIR" >&2
+echo "" >&2
 cat "$QUESTION_FILE"

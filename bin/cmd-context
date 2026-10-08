@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # shellcheck disable=SC1090
 source "$HOME/.local/lib/copilot-cmd-platform.sh"
 
 BASE="$HOME/.cache/copilot-cmd"
-TS="$(date '+%Y%m%d-%H%M%S')"
+TS="$(date '+%Y%m%d-%H%M%S')-$$-${RANDOM:-0}"
 DIR="$BASE/contexts/$TS"
 CTX="$DIR/context.md"
 
@@ -41,7 +42,7 @@ mkdir -p "$DIR"
 
     echo "## Git Remote"
     echo '```text'
-    git remote -v 2>/dev/null || true
+    git remote -v 2>/dev/null | sed -E 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' || true
     echo '```'
     echo
   fi
@@ -50,16 +51,23 @@ mkdir -p "$DIR"
   echo '```text'
   df -h . 2>/dev/null || true
   echo
-  du -sh . 2>/dev/null || true
+  if [ -n "${CMD_CONTEXT_DU_TIMEOUT:-}" ] && command -v timeout >/dev/null 2>&1; then
+    timeout "$CMD_CONTEXT_DU_TIMEOUT" du -sh . 2>/dev/null || echo "du: unavailable or timed out"
+  elif [ "${CMD_CONTEXT_SKIP_DU:-0}" = "1" ]; then
+    echo "du: skipped"
+  else
+    du -sh . 2>/dev/null || echo "du: unavailable"
+  fi
   echo '```'
   echo
 
   echo "## Recent Bash History"
   echo '```text'
-  if [ -f "$HOME/.bash_history" ]; then
-    tail -"${CMD_HISTORY_LINES:-50}" "$HOME/.bash_history" 2>/dev/null || true
+  HIST_FILE="${HISTFILE:-$HOME/.bash_history}"
+  if [ -f "$HIST_FILE" ]; then
+    cmd_redact_file_tail "$HIST_FILE" "${CMD_HISTORY_LINES:-50}" || echo "History unavailable."
   else
-    echo "No ~/.bash_history found."
+    echo "No history file found."
   fi
   echo '```'
   echo
@@ -80,7 +88,7 @@ mkdir -p "$DIR"
       if [ -f "$RUN_DIR/output.log" ]; then
         echo "### tail of output.log"
         echo '```text'
-        tail -120 "$RUN_DIR/output.log" 2>/dev/null || true
+        cmd_redact_file_tail "$RUN_DIR/output.log" 120 || echo "Output unavailable."
         echo '```'
         echo
       fi
@@ -103,7 +111,7 @@ mkdir -p "$DIR"
       if [ -f "$REC_DIR/output.log" ]; then
         echo "### tail of output.log"
         echo '```text'
-        tail -200 "$REC_DIR/output.log" 2>/dev/null || true
+        cmd_redact_file_tail "$REC_DIR/output.log" 200 || echo "Output unavailable."
         echo '```'
         echo
       fi

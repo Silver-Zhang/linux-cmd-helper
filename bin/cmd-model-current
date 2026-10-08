@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 CURRENT_FILE="$HOME/.config/copilot-cmd/current-native-model"
-ENV_LIB="$HOME/.local/lib/copilot-cmd-env.sh"
+CONFIG="$HOME/.config/copilot-deepseek/env"
 
-# DeepSeek 模型名以 lib/copilot-cmd-env.sh 为准，本脚本不再重复写死。
-# 该库在缺少 DeepSeek key 时会 exit 1，而本命令只做只读展示、不应依赖 key，
-# 因此先在子 shell 里探测一次，确认能安全加载后才真正 source。
-if [ -f "$ENV_LIB" ] && ( source "$ENV_LIB" ) >/dev/null 2>&1; then
-  # shellcheck disable=SC1090
-  source "$ENV_LIB"
-fi
+# Read only the two model override assignments. Do not source the user's env file:
+# this command is informational and must not execute arbitrary configuration code.
+read_model_override() {
+  local wanted="$1" line value
+  [ -f "$CONFIG" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      "export $wanted="*|"$wanted="*)
+        value="${line#*=}"
+        value="${value# }"
+        case "$value" in
+          \'*\') value="${value#\'}"; value="${value%\'}" ;;
+          \"*\") value="${value#\"}"; value="${value%\"}" ;;
+          *) continue ;;
+        esac
+        printf '%s\n' "$value"
+        ;;
+    esac
+  done < "$CONFIG"
+}
+
+FLASH_MODEL="$(read_model_override CMD_DEEPSEEK_FLASH_MODEL | tail -n 1)"
+PRO_MODEL="$(read_model_override CMD_DEEPSEEK_PRO_MODEL | tail -n 1)"
+FLASH_MODEL="${FLASH_MODEL:-deepseek-flash}"
+PRO_MODEL="${PRO_MODEL:-deepseek-v4-pro}"
 
 if [ -f "$CURRENT_FILE" ]; then
   echo "GitHub Copilot native 显示模型: $(cat "$CURRENT_FILE")"
@@ -18,5 +37,5 @@ else
   echo "GitHub Copilot native 显示模型: 未设置"
 fi
 
-echo "DeepSeek 默认模型: ${CMD_DEEPSEEK_FLASH_MODEL:-deepseek-flash}"
-echo "DeepSeek Pro 模型: ${CMD_DEEPSEEK_PRO_MODEL:-deepseek-v4-pro}"
+echo "DeepSeek 默认模型: $FLASH_MODEL"
+echo "DeepSeek Pro 模型: $PRO_MODEL"

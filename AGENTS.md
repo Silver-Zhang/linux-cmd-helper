@@ -166,6 +166,7 @@ linux-cmd-helper/
 │   ├── cmd-model-set
 │   ├── cmd-model-current
 │   ├── cmd-question
+│   ├── cmd-version
 │   └── copilot-cmd-send
 ├── lib/
 │   ├── copilot-cmd-platform.sh
@@ -592,9 +593,12 @@ AI agent 严禁执行以下行为：
 
 ---
 
-## 12. 当前优先开发任务
+`cmd-suggest` 目前只有 DeepSeek 后端，因此必须在脚本自身显式调用 DeepSeek key 检查；其余命令先解析后端，再按需加载配置。
 
-后续维护建议按优先级推进。
+1. `cmd`、`cmdx`、`cmd-chat`、`cmd-new`、`cmd-resume`、`cmd-git`、`cmd-suggest` 的 DeepSeek 配置应只在明确选择 DeepSeek 后加载；native 后端无需 DeepSeek key。
+2. `cmd-trash-empty` 和 `cmd-trash-prune` 的永久删除必须限制在对应回收站的直接子项内，并通过 `safe_rm_rf_path` 执行。
+3. macOS 默认 Bash 3.2 兼容性必须保留；不要使用 `mapfile`/`readarray` 等 Bash 4 专有特性。
+4. `cmd-version` 只读版本元数据，不 source 用户的 DeepSeek 配置。
 
 ### 12.1 近期修复任务
 

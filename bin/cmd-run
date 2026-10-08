@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [ "$#" -eq 0 ]; then
   echo 'Usage: cmd-run <command> [args...]' >&2
