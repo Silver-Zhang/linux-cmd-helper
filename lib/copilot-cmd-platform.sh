@@ -58,14 +58,14 @@ resolve_path() {
 
   # 4) 纯 shell 兜底：用 cd + pwd -P 解析目录。
   if [ -d "$target" ]; then
-    out="$(cd -- "$target" 2>/dev/null && pwd -P)" || out=""
+    out="$(cd "$target" 2>/dev/null && pwd -P)" || out=""
     if [ -n "$out" ]; then printf '%s\n' "$out"; return 0; fi
   fi
   local dir base
-  dir="$(dirname -- "$target")"
-  base="$(basename -- "$target")"
+  dir="$(dirname "$target")"
+  base="$(basename "$target")"
   if [ -d "$dir" ]; then
-    out="$(cd -- "$dir" 2>/dev/null && pwd -P)" || out=""
+    out="$(cd "$dir" 2>/dev/null && pwd -P)" || out=""
     if [ -n "$out" ]; then printf '%s/%s\n' "$out" "$base"; return 0; fi
   fi
 
@@ -123,8 +123,8 @@ safe_rm_rf_path() {
 
   # Resolve only the parent.  Resolving the target itself would follow a
   # symlink and could make rm -rf delete the link's target instead of the link.
-  parent="$(dirname -- "$target")"
-  name="$(basename -- "$target")"
+  parent="$(dirname "$target")"
+  name="$(basename "$target")"
   rparent="$(resolve_path "$parent")" || return 1
   lexical_target="$rparent/$name"
 

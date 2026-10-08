@@ -8,7 +8,7 @@ set -euo pipefail
 # 等系统目录；也绝不自动安装 Node/npm/Copilot CLI——只做检测和提示。
 # ============================================================
 
-PKG_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ------------------------------------------------------------
 # 0. 识别操作系统
@@ -40,7 +40,7 @@ PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
 # detect_shell_name：尽力得到用户 shell 的名字（zsh/bash/...）。
 detect_shell_name() {
   if [ -n "${SHELL:-}" ]; then
-    basename -- "$SHELL"
+    basename "$SHELL"
   else
     echo ""
   fi

@@ -12,7 +12,7 @@ case "$HOME" in
     exit 1
     ;;
 esac
-HOME_REAL="$(cd -- "$HOME" 2>/dev/null && pwd -P)" || {
+HOME_REAL="$(cd "$HOME" 2>/dev/null && pwd -P)" || {
   echo "错误：无法解析 HOME，为避免误删文件，拒绝卸载。" >&2
   exit 1
 }
