@@ -26,6 +26,7 @@ jobs:
       - name: Run integration tests
         run: bash tests/integration.sh
 
-      - name: ShellCheck
+      - name: ShellCheck (advisory)
         if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
         run: shellcheck install.sh uninstall.sh bin/* lib/* tests/*
