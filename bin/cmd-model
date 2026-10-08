@@ -75,7 +75,7 @@ while IFS= read -r model; do
 done < <(awk 'NF && $0 !~ /^[[:space:]]*#/' "$MODEL_FILE")
 
 i=1
-for m in "${MODELS[@]}"; do
+for m in "${MODELS[@]+${MODELS[@]}}"; do
   printf '  %d) %s\n' "$i" "$m"
   i=$((i + 1))
 done
@@ -98,7 +98,7 @@ if [ -z "$choice" ] || [ "$choice" = "0" ]; then
   exit 0
 fi
 
-if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODELS[@]}" ]; then
+if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#MODELS[@]:-0}" ]; then
   SELECTED="${MODELS[$((choice - 1))]}"
 elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -eq "$i" ]; then
   if ! read -r -p "请输入模型显示名: " SELECTED; then
