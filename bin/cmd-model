@@ -67,9 +67,11 @@ echo "请同步记录你刚才在 Copilot /model 中选择的模型："
 echo
 
 MODELS=()
+model_index=0
 while IFS= read -r model; do
   [ -n "$model" ] || continue
-  MODELS[${#MODELS[@]}]="$model"
+  MODELS[$model_index]="$model"
+  model_index=$((model_index + 1))
 done < <(awk 'NF && $0 !~ /^[[:space:]]*#/' "$MODEL_FILE")
 
 i=1
